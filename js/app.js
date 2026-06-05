@@ -926,7 +926,7 @@ function _handleCsvFile(e) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = ev => {
-    openImportModal(ev.target.result, _onCsvImport);
+    openImportModal(ev.target.result, _onCsvImport, file);
   };
   reader.readAsText(file);
   e.target.value = '';  // reset so same file can be re-selected

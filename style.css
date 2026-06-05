@@ -1056,6 +1056,108 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .csv-table-wrap tr:last-child td { border-bottom: none; }
 .csv-table-wrap tr:hover td { background: var(--bg-hover); }
 
+/* ─── pyXLMS conversion section ─────────────────────────────────────────── */
+
+#csvConversionSection {
+  background: var(--bg-2, #f8f9fa);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+
+.csv-conv-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.csv-conv-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.csv-conv-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+#csvEngineSelect {
+  min-width: 155px;
+  flex: 1;
+  max-width: 200px;
+}
+
+.csv-conv-xl-input {
+  width: 90px;
+}
+
+.csv-server-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+
+.server-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.server-dot-checking { background: #f0a500; animation: pulse 1s infinite; }
+.server-dot-ok        { background: #34a853; }
+.server-dot-err       { background: #ea4335; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.csv-server-instructions {
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.csv-conv-code {
+  display: inline-block;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.csv-conv-error {
+  font-size: 12px;
+  color: #ea4335;
+  background: #fdecea;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-top: 8px;
+}
+
+/* ─── Modal footer ──────────────────────────────────────────────────────── */
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

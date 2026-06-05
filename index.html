@@ -211,69 +211,103 @@
 
       <div class="csv-scroll-body">
 
-        <!-- Protein → Chain mapping -->
-        <div>
-          <div class="csv-section-title">Map proteins to chain IDs</div>
-          <div id="csvProteinMapping"></div>
+        <!-- pyXLMS conversion section (shown when format is unknown) -->
+        <div id="csvConversionSection" style="display:none">
+          <div class="csv-section-title">Convert with xkit / pyXLMS</div>
+          <p class="csv-conv-hint">
+            This file format was not recognized as xiNET or xiVIEW.
+            Select the software that generated the file and click <strong>Convert</strong>.
+          </p>
+          <div class="csv-conv-row">
+            <label class="csv-conv-label">Engine</label>
+            <select id="csvEngineSelect">
+              <option value="">— select engine —</option>
+            </select>
+            <label class="csv-conv-label">Crosslinker</label>
+            <input id="csvCrosslinkerInput" type="text" placeholder="e.g. DSS" class="csv-conv-xl-input">
+            <button id="csvConvertBtn" class="btn btn-primary btn-sm" disabled>Convert</button>
+          </div>
+          <div class="csv-server-status" id="csvServerStatus">
+            <span class="server-dot" id="csvServerDot"></span>
+            <span id="csvServerStatusText">Checking for xkit server…</span>
+          </div>
+          <div id="csvServerInstructions" class="csv-server-instructions" style="display:none">
+            Start the conversion server in your xkit conda environment:
+            <code class="csv-conv-code">python xkit_server.py</code>
+            Then click Retry.
+            <button id="csvRetryServer" class="btn btn-ghost btn-sm">Retry</button>
+          </div>
+          <div id="csvConversionError" class="csv-conv-error" style="display:none"></div>
         </div>
 
-        <!-- Crosslinker selection -->
-        <div>
-          <div class="csv-section-title">Crosslinker type</div>
-          <div class="csv-xl-row">
-            <select id="csvCrosslinkerSelect"></select>
-            <input type="number" id="csvDynamicN" value="5" min="1" max="50"
-                   style="display:none" title="n value for LINK<n>/RIGID<n>">
-          </div>
-          <div class="csv-asym-warning" id="csvAsymWarning" style="display:none"></div>
-        </div>
+        <!-- Main import content (shown once format is known / conversion done) -->
+        <div id="csvMainContent" style="display:none">
 
-        <!-- Filters -->
-        <div>
-          <div class="csv-section-title">Filter crosslinks</div>
-          <div class="csv-filter-row">
-            <label>
-              Min score:
-              <input type="number" id="csvMinScore" placeholder="e.g. 0.5" step="0.01">
-            </label>
-            <label>
-              <input type="checkbox" id="csvExcludeDecoys" checked>
-              Exclude decoys
-            </label>
-            <label>
-              <input type="checkbox" id="csvOnlyInter">
-              Only inter-protein
-            </label>
+          <!-- Protein → Chain mapping -->
+          <div>
+            <div class="csv-section-title">Map proteins to chain IDs</div>
+            <div id="csvProteinMapping"></div>
           </div>
-        </div>
 
-        <!-- Selection table -->
-        <div>
-          <div class="csv-table-header">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px">
-              <input type="checkbox" id="csvSelectAll" checked>
-              Select all
-            </label>
-            <span id="csvFilteredCount"></span>
-            <span id="csvSelectedCount" style="color:var(--primary);font-weight:600"></span>
+          <!-- Crosslinker selection -->
+          <div>
+            <div class="csv-section-title">Crosslinker type</div>
+            <div class="csv-xl-row">
+              <select id="csvCrosslinkerSelect"></select>
+              <input type="number" id="csvDynamicN" value="5" min="1" max="50"
+                     style="display:none" title="n value for LINK<n>/RIGID<n>">
+            </div>
+            <div class="csv-asym-warning" id="csvAsymWarning" style="display:none"></div>
           </div>
-          <div class="csv-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Protein 1</th>
-                  <th>Pos 1</th>
-                  <th>Protein 2</th>
-                  <th>Pos 2</th>
-                  <th>Score</th>
-                  <th>Type</th>
-                </tr>
-              </thead>
-              <tbody id="csvTableBody"></tbody>
-            </table>
+
+          <!-- Filters -->
+          <div>
+            <div class="csv-section-title">Filter crosslinks</div>
+            <div class="csv-filter-row">
+              <label>
+                Min score:
+                <input type="number" id="csvMinScore" placeholder="e.g. 0.5" step="0.01">
+              </label>
+              <label>
+                <input type="checkbox" id="csvExcludeDecoys" checked>
+                Exclude decoys
+              </label>
+              <label>
+                <input type="checkbox" id="csvOnlyInter">
+                Only inter-protein
+              </label>
+            </div>
           </div>
-        </div>
+
+          <!-- Selection table -->
+          <div>
+            <div class="csv-table-header">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px">
+                <input type="checkbox" id="csvSelectAll" checked>
+                Select all
+              </label>
+              <span id="csvFilteredCount"></span>
+              <span id="csvSelectedCount" style="color:var(--primary);font-weight:600"></span>
+            </div>
+            <div class="csv-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Protein 1</th>
+                    <th>Pos 1</th>
+                    <th>Protein 2</th>
+                    <th>Pos 2</th>
+                    <th>Score</th>
+                    <th>Type</th>
+                  </tr>
+                </thead>
+                <tbody id="csvTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div><!-- /csvMainContent -->
 
       </div><!-- /csv-scroll-body -->
 

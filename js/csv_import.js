@@ -1,12 +1,20 @@
 /**
- * CSV import module — parses xiVIEW / xiNET crosslink CSVs in the browser
- * and drives the import modal.
+ * CSV import module — parses xiVIEW / xiNET crosslink CSVs in the browser,
+ * and optionally converts other formats via a local xkit/pyXLMS server.
  *
  * No external libraries required; handles quoted fields and semicolon-
  * delimited ambiguous assignments natively.
  */
 
 import { CROSSLINKERS } from './data.js';
+
+const XKIT_SERVER = 'http://localhost:5174';
+
+// pyXLMS engines (matches xkit/pyxlms_compat.py)
+const PYXLMS_ENGINES = [
+  'Custom', 'MaxQuant', 'MaxLynx', 'MeroX', 'MS Annika',
+  'mzIdentML', 'pLink', 'Scout', 'xiSearch/xiFDR', 'XlinkX',
+];
 
 // ─── CSV parsing ──────────────────────────────────────────────────────────────
 
@@ -50,8 +58,7 @@ function _splitRow(line) {
 // ─── Format detection ─────────────────────────────────────────────────────────
 
 /**
- * Returns 'xiview' | 'xinet' | 'generic' based on column names.
- * 'generic' means we got Protein1/Protein2 but need the user to pick position cols.
+ * Returns 'xiview' | 'xinet' | 'generic' | 'unknown' based on column names.
  */
 export function detectFormat(headers) {
   const h = new Set(headers.map(x => x.trim()));
@@ -78,17 +85,15 @@ function _parseXiviewRow(row) {
                     row['Decoy1'] === 'TRUE' || row['Decoy2'] === 'TRUE';
   const linkType  = row['LinkType'] || row['Link-Type'] || '';
 
-  const pairs = [];
-  // Take first disambiguation for each side (most common case)
   const p1 = proteins1[0] || '';
   const p2 = proteins2[0] || '';
   const r1 = pos1s[0]   || null;
   const r2 = pos2s[0]   || null;
   if (p1 && p2 && r1 && r2) {
-    pairs.push({ protein1: p1, pos1: r1, protein2: p2, pos2: r2,
-                 score, isDecoy, linkType, ambiguous: proteins1.length > 1 || proteins2.length > 1 });
+    return [{ protein1: p1, pos1: r1, protein2: p2, pos2: r2,
+              score, isDecoy, linkType, ambiguous: proteins1.length > 1 || proteins2.length > 1 }];
   }
-  return pairs;
+  return [];
 }
 
 function _parseXinetRow(row) {
@@ -96,9 +101,8 @@ function _parseXinetRow(row) {
   const proteins2 = _splitMulti(row['Protein2']);
   const score     = parseFloat(row['Score']) || null;
   const linkType  = row['LinkType'] || row['Link-Type'] || '';
-  const isDecoy   = false; // xiNET format has no decoy column
+  const isDecoy   = false;
 
-  // xiNET: absolute = PepPos (0-based) + LinkPos
   function absPos(idx) {
     const pepKey  = `PepPos${idx}`;
     const linkKey = `LinkPos${idx}`;
@@ -106,10 +110,8 @@ function _parseXinetRow(row) {
     const linkRaw = row[linkKey];
     const pepList  = pepRaw  ? _splitMulti(pepRaw).map(Number)  : [0];
     const linkList = linkRaw ? _splitMulti(linkRaw).map(Number) : [0];
-    // Use first entry; pepPos is 1-based in some versions, treat as 0-based offset
     const pep  = pepList[0]  || 0;
     const link = linkList[0] || 0;
-    // If PepPos exists, absolute = pep (0-based) + link (1-based within peptide)
     return pepRaw ? pep + link : link;
   }
 
@@ -139,7 +141,7 @@ function _parseGenericRow(row, col1, col2) {
 // ─── Main parse function ──────────────────────────────────────────────────────
 
 /**
- * Parse CSV text and return { format, pairs, proteins, headers }.
+ * Parse CSV text → { format, pairs, proteins, headers }.
  * genericCols = { col1, col2 } for manual column mapping (optional).
  */
 export function parseCSVFile(text, genericCols = null) {
@@ -165,85 +167,185 @@ export function parseCSVFile(text, genericCols = null) {
   return { format, pairs, proteins, headers };
 }
 
-// ─── Import Modal ─────────────────────────────────────────────────────────────
+// ─── Import Modal state ───────────────────────────────────────────────────────
 
 let _modalData        = null;  // { format, pairs, proteins, headers }
-let _onImport         = null;  // callback(selectedPairs, crosslinkerName, proteinToChain, sequences)
+let _onImport         = null;  // callback
 let _genericCols      = { col1: '', col2: '' };
-let _fetchedSequences = {};    // protein full name → sequence string
+let _fetchedSequences = {};    // protein → sequence string
+let _importFile       = null;  // original File object (for pyXLMS conversion)
 
-/** Open the CSV import modal. onImport(pairs, xlName, proteinToChain) is called on confirm. */
-export function openImportModal(csvText, onImport) {
+// ─── Open modal ───────────────────────────────────────────────────────────────
+
+/**
+ * Open the CSV import modal.
+ * file = original File object, needed only for pyXLMS conversion.
+ */
+export function openImportModal(csvText, onImport, file = null) {
   _onImport = onImport;
+  _importFile = file;
   _genericCols = { col1: '', col2: '' };
 
   const raw = parseCSVFile(csvText);
   if (!raw) { alert('Could not parse the CSV file — is it empty?'); return; }
 
-  // For unknown formats with no Protein1/2, bail
   if (raw.format === 'unknown') {
-    const modal = document.getElementById('csv-modal');
-    _showColumnMapper(csvText, raw.headers, onImport);
+    _openConversionUI();
     return;
   }
 
   _modalData = raw;
-  _renderImportModal();
+  _showMainContent(raw);
   document.getElementById('csv-modal').style.display = 'flex';
 }
 
-function _showColumnMapper(csvText, headers, onImport) {
-  // Show a minimal column-mapping UI instead of the full modal
-  const numCols = headers.filter(h => {
-    // heuristic: column might be numeric if name contains pos/site/residue
-    return /pos|site|res|resi|position/i.test(h);
+// ─── pyXLMS conversion UI ─────────────────────────────────────────────────────
+
+function _openConversionUI() {
+  // Hide main content, show conversion section
+  document.getElementById('csvMainContent').style.display = 'none';
+  document.getElementById('csvConversionSection').style.display = '';
+  document.getElementById('csvConversionError').style.display = 'none';
+
+  // Populate engine dropdown
+  const sel = document.getElementById('csvEngineSelect');
+  sel.innerHTML = '<option value="">— select engine —</option>';
+  PYXLMS_ENGINES.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e;
+    opt.textContent = e;
+    sel.appendChild(opt);
   });
-  const fallback = numCols.length >= 2 ? numCols : headers;
 
-  const col1 = prompt(
-    `Column for residue position 1?\nAvailable: ${headers.join(', ')}`,
-    fallback[0] || ''
-  );
-  const col2 = prompt(
-    `Column for residue position 2?\nAvailable: ${headers.join(', ')}`,
-    fallback[1] || ''
-  );
-  if (!col1 || !col2) return;
+  // Badge + count
+  document.getElementById('csvFormatBadge').textContent = 'Unknown';
+  document.getElementById('csvTotalCount').textContent = '';
 
-  _genericCols = { col1, col2 };
-  _modalData   = parseCSVFile(csvText, _genericCols);
-  if (!_modalData || !_modalData.pairs.length) {
-    alert('No valid crosslink pairs found with those columns.');
-    return;
+  // Wire controls
+  const convertBtn = document.getElementById('csvConvertBtn');
+  const xlInput    = document.getElementById('csvCrosslinkerInput');
+
+  function _updateConvertBtn() {
+    const ready = sel.value && xlInput.value.trim() && _serverOnline;
+    convertBtn.disabled = !ready;
   }
-  _renderImportModal();
+  sel.onchange = _updateConvertBtn;
+  xlInput.oninput = _updateConvertBtn;
+  convertBtn.onclick = _doConvert;
+  document.getElementById('csvRetryServer').onclick = () => _checkServer(_updateConvertBtn);
+
   document.getElementById('csv-modal').style.display = 'flex';
+
+  // Async server check
+  _serverOnline = false;
+  _checkServer(_updateConvertBtn);
 }
 
-function _renderImportModal() {
-  const { format, pairs, proteins } = _modalData;
+let _serverOnline = false;
 
-  // Format badge
-  document.getElementById('csvFormatBadge').textContent =
-    format === 'xiview' ? 'xiVIEW (AbsPos)' :
-    format === 'xinet'  ? 'xiNET (LinkPos)'  : 'Generic';
-  document.getElementById('csvTotalCount').textContent = `${pairs.length} pairs found`;
+async function _checkServer(onDone) {
+  const dot  = document.getElementById('csvServerDot');
+  const text = document.getElementById('csvServerStatusText');
+  const ins  = document.getElementById('csvServerInstructions');
 
-  // Protein → chain mapping
+  dot.className  = 'server-dot server-dot-checking';
+  text.textContent = 'Checking for xkit server…';
+  ins.style.display = 'none';
+
+  try {
+    const res = await fetch(`${XKIT_SERVER}/health`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    _serverOnline = true;
+    dot.className  = 'server-dot server-dot-ok';
+    text.textContent = `xkit server online — ${json.engines ? json.engines.length : '?'} engines available`;
+    ins.style.display = 'none';
+  } catch {
+    _serverOnline = false;
+    dot.className  = 'server-dot server-dot-err';
+    text.textContent = 'xkit server not reachable';
+    ins.style.display = '';
+  }
+  if (onDone) onDone();
+}
+
+async function _doConvert() {
+  const engine      = document.getElementById('csvEngineSelect').value;
+  const crosslinker = document.getElementById('csvCrosslinkerInput').value.trim();
+  const errEl       = document.getElementById('csvConversionError');
+  const btn         = document.getElementById('csvConvertBtn');
+
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Converting…';
+
+  try {
+    const fd = new FormData();
+    if (_importFile) {
+      fd.append('file', _importFile);
+    } else {
+      // Should not normally happen — file object always passed in
+      throw new Error('Original file object not available. Please re-upload.');
+    }
+    fd.append('engine', engine);
+    fd.append('crosslinker', crosslinker);
+
+    const res = await fetch(`${XKIT_SERVER}/convert`, { method: 'POST', body: fd });
+    const json = await res.json();
+
+    if (!res.ok || json.error) {
+      throw new Error(json.error || `Server error ${res.status}`);
+    }
+
+    // Parse the returned xiNET CSV and switch to normal import UI
+    const parsed = parseCSVFile(json.csv);
+    if (!parsed || !parsed.pairs.length) {
+      throw new Error('Conversion returned empty result — check engine and crosslinker name.');
+    }
+
+    _modalData = parsed;
+    document.getElementById('csvConversionSection').style.display = 'none';
+    document.getElementById('csvFormatBadge').textContent =
+      `pyXLMS → xiNET (${engine}, ${crosslinker})`;
+    document.getElementById('csvTotalCount').textContent = `${parsed.pairs.length} pairs`;
+    _showMainContent(parsed);
+
+  } catch (e) {
+    errEl.textContent = `Conversion failed: ${e.message}`;
+    errEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Convert';
+  }
+}
+
+// ─── Render main import content ───────────────────────────────────────────────
+
+function _showMainContent(data) {
+  const { format, pairs, proteins } = data;
+
+  document.getElementById('csvMainContent').style.display = '';
+
+  // Format badge (only set if not already set by conversion)
+  const badge = document.getElementById('csvFormatBadge');
+  if (!badge.textContent.includes('pyXLMS')) {
+    badge.textContent =
+      format === 'xiview' ? 'xiVIEW (AbsPos)' :
+      format === 'xinet'  ? 'xiNET (LinkPos)'  : 'Generic';
+    document.getElementById('csvTotalCount').textContent = `${pairs.length} pairs found`;
+  }
+
   _renderProteinMapping(proteins);
-
-  // Populate crosslinker selector (reuse the one in main form if possible)
   _renderCsvCrosslinkerSelect();
-
-  // Apply filters and render table
   _applyFiltersAndRender();
 
-  // Wire up filter events
   document.getElementById('csvMinScore').oninput = _applyFiltersAndRender;
   document.getElementById('csvExcludeDecoys').onchange = _applyFiltersAndRender;
   document.getElementById('csvOnlyInter').onchange = _applyFiltersAndRender;
   document.getElementById('csvSelectAll').onchange = _toggleSelectAll;
 }
+
+// ─── Protein mapping ──────────────────────────────────────────────────────────
 
 function _renderProteinMapping(proteins) {
   const container = document.getElementById('csvProteinMapping');
@@ -251,7 +353,6 @@ function _renderProteinMapping(proteins) {
 
   const hasUniProt = proteins.some(p => _extractUniprotAcc(p) !== null);
 
-  // Header row: select-all checkbox + optional fetch button
   const headerRow = document.createElement('div');
   headerRow.className = 'mapping-header-row';
 
@@ -278,7 +379,6 @@ function _renderProteinMapping(proteins) {
   }
   container.appendChild(headerRow);
 
-  // Per-protein rows
   proteins.forEach((prot, i) => {
     const acc = _extractUniprotAcc(prot);
     const row = document.createElement('div');
@@ -328,7 +428,6 @@ function _renderProteinMapping(proteins) {
     container.appendChild(row);
   });
 
-  // Wire select-all
   selectAllCb.addEventListener('change', () => {
     container.querySelectorAll('.mapping-protein-cb').forEach(cb => {
       cb.checked = selectAllCb.checked;
@@ -346,7 +445,7 @@ function _setProteinRowEnabled(row, enabled) {
 }
 
 function _syncMappingSelectAll(container) {
-  const all = container.querySelectorAll('.mapping-protein-cb');
+  const all     = container.querySelectorAll('.mapping-protein-cb');
   const checked = container.querySelectorAll('.mapping-protein-cb:checked');
   const cb = document.getElementById('mappingSelectAll');
   if (!cb) return;
@@ -354,7 +453,6 @@ function _syncMappingSelectAll(container) {
   cb.checked = checked.length === all.length;
 }
 
-/** Returns a Set of currently-selected protein full names. */
 function _getSelectedProteins() {
   const selected = new Set();
   document.querySelectorAll('#csvProteinMapping .mapping-protein-cb:checked').forEach(cb => {
@@ -363,17 +461,18 @@ function _getSelectedProteins() {
   return selected;
 }
 
+// ─── Crosslinker select ───────────────────────────────────────────────────────
+
 function _renderCsvCrosslinkerSelect() {
   const sel = document.getElementById('csvCrosslinkerSelect');
   sel.innerHTML = '';
   CROSSLINKERS.forEach(xl => {
-    if (xl.dynamic) return; // handled separately
+    if (xl.dynamic) return;
     const opt = document.createElement('option');
     opt.value = xl.name;
     opt.textContent = xl.name + (xl.symmetric ? '' : ' ⚠ asymmetric');
     sel.appendChild(opt);
   });
-  // Dynamic
   ['LINK', 'RIGID'].forEach(type => {
     const opt = document.createElement('option');
     opt.value = type + '_dynamic';
@@ -389,7 +488,7 @@ function _renderCsvCrosslinkerSelect() {
 }
 
 function _checkAsymmetricWarning(xlName) {
-  const xl = CROSSLINKERS.find(x => x.name === xlName);
+  const xl   = CROSSLINKERS.find(x => x.name === xlName);
   const warn = document.getElementById('csvAsymWarning');
   if (xl && !xl.symmetric && !xl.dynamic) {
     warn.style.display = 'block';
@@ -399,11 +498,13 @@ function _checkAsymmetricWarning(xlName) {
   }
 }
 
+// ─── Table ────────────────────────────────────────────────────────────────────
+
 function _applyFiltersAndRender() {
-  const minScore       = parseFloat(document.getElementById('csvMinScore').value) || -Infinity;
-  const excludeDecoys  = document.getElementById('csvExcludeDecoys').checked;
-  const onlyInter      = document.getElementById('csvOnlyInter').checked;
-  const selectedProts  = _getSelectedProteins();
+  const minScore      = parseFloat(document.getElementById('csvMinScore').value) || -Infinity;
+  const excludeDecoys = document.getElementById('csvExcludeDecoys').checked;
+  const onlyInter     = document.getElementById('csvOnlyInter').checked;
+  const selectedProts = _getSelectedProteins();
 
   const filtered = _modalData.pairs.filter(p => {
     if (excludeDecoys && p.isDecoy) return false;
@@ -421,9 +522,8 @@ function _renderTable(pairs) {
   tbody.innerHTML = '';
   document.getElementById('csvFilteredCount').textContent = `${pairs.length} shown`;
 
-  pairs.forEach((pair, i) => {
+  pairs.forEach(pair => {
     const tr = document.createElement('tr');
-    tr.dataset.pairIdx = i;
 
     const tdCheck = document.createElement('td');
     const cb = document.createElement('input');
@@ -450,7 +550,6 @@ function _renderTable(pairs) {
       tr.appendChild(td);
     });
 
-    // Store full pair data on the row for retrieval
     tr._pairData = pair;
     tbody.appendChild(tr);
   });
@@ -470,11 +569,12 @@ function _updateSelectedCount() {
   document.getElementById('csvSelectedCount').textContent = `${selected} / ${total} selected`;
 }
 
-/** Build the protein→chain map — only for proteins whose checkbox is checked. */
+// ─── Confirm / Cancel ─────────────────────────────────────────────────────────
+
 function _buildProteinToChain() {
   const map = {};
   document.querySelectorAll('#csvProteinMapping .mapping-chain-input').forEach(input => {
-    if (input.disabled) return;   // skip deselected proteins
+    if (input.disabled) return;
     const prot  = input.dataset.protein;
     const chain = input.value.trim();
     if (prot && chain) map[prot] = chain;
@@ -482,7 +582,6 @@ function _buildProteinToChain() {
   return map;
 }
 
-/** Resolve final crosslinker name (handles dynamic LINK<n>/RIGID<n>). */
 function _resolveXlName() {
   const val = document.getElementById('csvCrosslinkerSelect').value;
   if (val.endsWith('_dynamic')) {
@@ -493,15 +592,54 @@ function _resolveXlName() {
   return val;
 }
 
+export function initImportModal() {
+  document.getElementById('csvModalClose').onclick    = _closeModal;
+  document.getElementById('csvImportCancel').onclick  = _closeModal;
+  document.getElementById('csvImportConfirm').onclick = _confirmImport;
+}
+
+function _closeModal() {
+  document.getElementById('csv-modal').style.display = 'none';
+  _modalData = null;
+  _importFile = null;
+  _fetchedSequences = {};
+}
+
+function _confirmImport() {
+  if (!_modalData || !_onImport) return;
+
+  const rows     = document.querySelectorAll('#csvTableBody tr');
+  const selected = [];
+  rows.forEach(tr => {
+    const cb = tr.querySelector('.pair-checkbox');
+    if (cb && cb.checked && tr._pairData) selected.push(tr._pairData);
+  });
+
+  if (selected.length === 0) {
+    alert('No crosslink pairs selected.');
+    return;
+  }
+
+  const proteinToChain = _buildProteinToChain();
+  const xlName         = _resolveXlName();
+
+  const missing = [...new Set(selected.flatMap(p => [p.protein1, p.protein2]))]
+    .filter(prot => !proteinToChain[prot]);
+  if (missing.length > 0) {
+    alert(`Please assign chain IDs for: ${missing.map(_shortProteinName).join(', ')}`);
+    return;
+  }
+
+  _onImport(selected, xlName, proteinToChain, { ..._fetchedSequences });
+  _closeModal();
+}
+
 // ─── UniProt sequence fetch ───────────────────────────────────────────────────
 
-/** Extract UniProt accession from full protein name. */
 function _extractUniprotAcc(name) {
   if (!name) return null;
   const parts = name.split('|');
-  // Standard UniProt: sp|P08518|Rpb2 or tr|Q9Y6K9|...
   if (parts.length >= 3 && (parts[0] === 'sp' || parts[0] === 'tr')) return parts[1];
-  // Plain accession P12345 / A0A123
   if (/^[OPQ][0-9][A-Z0-9]{3}[0-9]$|^[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$/.test(name)) return name;
   return null;
 }
@@ -526,7 +664,7 @@ async function _fetchAllSequences(container, proteins) {
   const uniProtProteins = proteins.filter(p => _extractUniprotAcc(p) !== null);
 
   await Promise.all(uniProtProteins.map(async prot => {
-    const acc = _extractUniprotAcc(prot);
+    const acc      = _extractUniprotAcc(prot);
     const statusEl = container.querySelector(`.fetch-status[data-protein="${CSS.escape(prot)}"]`);
     if (statusEl) { statusEl.textContent = '⏳'; statusEl.style.color = 'var(--text-3)'; }
 
@@ -534,18 +672,12 @@ async function _fetchAllSequences(container, proteins) {
       const res = await fetch(`https://rest.uniprot.org/uniprotkb/${acc}.fasta`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      const seq = _extractFastaSeq(text);
+      const seq  = _extractFastaSeq(text);
       if (!seq) throw new Error('empty response');
       _fetchedSequences[prot] = seq;
-      if (statusEl) {
-        statusEl.textContent = `✓ ${seq.length} aa`;
-        statusEl.style.color = '#34a853';
-      }
+      if (statusEl) { statusEl.textContent = `✓ ${seq.length} aa`; statusEl.style.color = '#34a853'; }
     } catch (e) {
-      if (statusEl) {
-        statusEl.textContent = `✗ ${e.message}`;
-        statusEl.style.color = '#ea4335';
-      }
+      if (statusEl) { statusEl.textContent = `✗ ${e.message}`; statusEl.style.color = '#ea4335'; }
     }
   }));
 
@@ -557,58 +689,11 @@ async function _fetchAllSequences(container, proteins) {
   if (btn) btn.disabled = false;
 }
 
-// ─── Wire up confirm / cancel ─────────────────────────────────────────────────
-
-export function initImportModal() {
-  document.getElementById('csvModalClose').onclick   = _closeModal;
-  document.getElementById('csvImportCancel').onclick = _closeModal;
-  document.getElementById('csvImportConfirm').onclick = _confirmImport;
-}
-
-function _closeModal() {
-  document.getElementById('csv-modal').style.display = 'none';
-  _modalData = null;
-  _fetchedSequences = {};
-}
-
-function _confirmImport() {
-  if (!_modalData || !_onImport) return;
-
-  const rows = document.querySelectorAll('#csvTableBody tr');
-  const selected = [];
-  rows.forEach(tr => {
-    const cb = tr.querySelector('.pair-checkbox');
-    if (cb && cb.checked && tr._pairData) selected.push(tr._pairData);
-  });
-
-  if (selected.length === 0) {
-    alert('No crosslink pairs selected.');
-    return;
-  }
-
-  const proteinToChain = _buildProteinToChain();
-  const xlName         = _resolveXlName();
-
-  // Validate that all proteins have a chain assignment
-  const missing = [...new Set(selected.flatMap(p => [p.protein1, p.protein2]))]
-    .filter(prot => !proteinToChain[prot]);
-  if (missing.length > 0) {
-    alert(`Please assign chain IDs for: ${missing.map(_shortProteinName).join(', ')}`);
-    return;
-  }
-
-  _onImport(selected, xlName, proteinToChain, { ..._fetchedSequences });
-  _closeModal();
-}
-
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
-/** Shorten "sp|P12345|PROT1_HUMAN" → "PROT1_HUMAN". */
 export function _shortProteinName(name) {
   if (!name) return '';
-  // UniProt format: sp|ACC|ENTRY → take ENTRY
   const parts = name.split('|');
   if (parts.length === 3) return parts[2];
-  // Otherwise take last part after '|' or the whole thing
   return parts[parts.length - 1];
 }
