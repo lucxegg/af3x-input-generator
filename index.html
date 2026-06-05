@@ -139,6 +139,50 @@
       <!-- Generate -->
       <div class="generate-area">
         <button class="btn btn-primary btn-large" id="generateBtn">Generate JSON</button>
+
+        <!-- Batch export / Screening -->
+        <details id="batchPanel" class="batch-panel">
+          <summary class="batch-summary">Batch export / Screening</summary>
+          <div class="batch-body">
+
+            <!-- Single XL -->
+            <div class="batch-section">
+              <div class="batch-section-title">Single crosslink — one JSON per pair</div>
+              <p class="batch-hint">
+                Generates one JSON file per crosslink pair, with all other settings
+                (sequences, MSA, seeds) identical. Useful for testing each restraint individually.
+              </p>
+              <div class="batch-row">
+                <span id="batchSingleInfo" class="batch-info-inline"></span>
+                <button id="batchSingleBtn" class="btn btn-outline btn-sm">Download ZIP</button>
+              </div>
+            </div>
+
+            <!-- Random combos -->
+            <div class="batch-section">
+              <div class="batch-section-title">Random combinations — screening</div>
+              <p class="batch-hint">
+                Randomly sample K crosslinks per prediction job. Use when you have many
+                potential restraints and want to screen which combinations improve structure quality.
+              </p>
+              <div class="batch-row">
+                <label class="batch-label">
+                  XLs per job
+                  <input type="number" id="batchComboK" value="5" min="1" max="500"
+                         class="batch-num-input">
+                </label>
+                <label class="batch-label">
+                  Number of jobs
+                  <input type="number" id="batchComboM" value="20" min="1" max="500"
+                         class="batch-num-input">
+                </label>
+                <button id="batchComboBtn" class="btn btn-outline btn-sm">Download ZIP</button>
+              </div>
+              <div id="batchComboInfo" class="batch-info"></div>
+            </div>
+
+          </div>
+        </details>
       </div>
 
     </div><!-- /form-col -->

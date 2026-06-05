@@ -46,6 +46,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('generateBtn').addEventListener('click', generateJSON);
   document.getElementById('copyJsonBtn').addEventListener('click', _copyJSON);
 
+  // Batch export
+  document.getElementById('batchSingleBtn').addEventListener('click', _batchSingleXL);
+  document.getElementById('batchComboBtn').addEventListener('click', _batchRandomCombos);
+  document.getElementById('batchComboK').addEventListener('input', _updateBatchInfo);
+  document.getElementById('batchComboM').addEventListener('input', _updateBatchInfo);
+  document.getElementById('batchPanel').addEventListener('toggle', _updateBatchInfo);
+
   // JSON import button
   document.getElementById('importBtn').addEventListener('click', () => {
     document.getElementById('importFileInput').click();
@@ -1422,4 +1429,160 @@ function _readSsBondsFromDOM() {
     if (c1 && p1 && c2 && p2) bonds.push({ chain1: c1, pos1: p1, chain2: c2, pos2: p2 });
   });
   return bonds;
+}
+
+// ─── Batch export / Screening ─────────────────────────────────────────────────
+
+/** Extract all crosslink pairs from the DOM as flat objects. */
+function _getAllCrosslinkPairs() {
+  const all = [];
+  document.querySelectorAll('.xl-group-card').forEach(card => {
+    const xlSel = card.querySelector('.xl-select');
+    let xlName  = xlSel?.value || 'DSSO';
+    const xl    = CROSSLINKERS.find(x => x.name === xlName);
+    if (xl?.dynamic) {
+      const n = parseInt(card.querySelector('.xl-dyn-n-input')?.value) || 5;
+      xlName  = xlName + n;
+    }
+    card.querySelectorAll('.xl-pair-row').forEach(row => {
+      const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+      const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || null;
+      const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+      const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || null;
+      if (c1 && p1 && c2 && p2) all.push({ xlName, pair: [[c1, p1], [c2, p2]] });
+    });
+  });
+  return all;
+}
+
+/** Group [{xlName, pair}] → [{name: xlName, residue_pairs: [...]}] for JSON output. */
+function _groupByXLName(items) {
+  const map = new Map();
+  for (const { xlName, pair } of items) {
+    if (!map.has(xlName)) map.set(xlName, []);
+    map.get(xlName).push(pair);
+  }
+  return [...map.entries()].map(([name, residue_pairs]) => ({ name, residue_pairs }));
+}
+
+/** Build a complete JSON but replace the crosslinks field with the given groups. */
+function _buildJSONWithXL(xlGroups) {
+  const out = _buildJSON();
+  if (xlGroups && xlGroups.length) {
+    out.crosslinks = xlGroups;
+  } else {
+    delete out.crosslinks;
+  }
+  return out;
+}
+
+/** Create and trigger download of a ZIP archive. */
+async function _downloadZip(files, zipFilename) {
+  const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
+  const zip = new JSZip();
+  files.forEach(f => zip.file(f.name, f.content));
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = zipFilename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function _batchSingleXL() {
+  const btn = document.getElementById('batchSingleBtn');
+  btn.disabled = true;
+  btn.textContent = 'Building…';
+  try {
+    const allPairs = _getAllCrosslinkPairs();
+    if (!allPairs.length) { alert('No crosslink pairs loaded.'); return; }
+
+    const base    = _buildJSON();  // validates required fields, throws on error
+    const jobName = base.name || 'job';
+
+    const files = allPairs.map(({ xlName, pair }) => {
+      const label = `${xlName}_${pair[0][0]}${pair[0][1]}-${pair[1][0]}${pair[1][1]}`;
+      const json  = _buildJSONWithXL([{ name: xlName, residue_pairs: [pair] }]);
+      json.name   = `${jobName}_${label}`;
+      return { name: `${jobName}_${label}.json`, content: JSON.stringify(json, null, 2) };
+    });
+
+    await _downloadZip(files, `${jobName}_single_xl.zip`);
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Download ZIP';
+  }
+}
+
+async function _batchRandomCombos() {
+  const btn = document.getElementById('batchComboBtn');
+  btn.disabled = true;
+  btn.textContent = 'Building…';
+  try {
+    const allPairs = _getAllCrosslinkPairs();
+    const k = parseInt(document.getElementById('batchComboK').value) || 5;
+    const m = parseInt(document.getElementById('batchComboM').value) || 20;
+
+    if (!allPairs.length) { alert('No crosslink pairs loaded.'); return; }
+    if (k > allPairs.length) {
+      alert(`k=${k} exceeds available pairs (${allPairs.length}). Reduce k.`);
+      return;
+    }
+
+    const base    = _buildJSON();
+    const jobName = base.name || 'job';
+    const files   = [];
+
+    for (let i = 0; i < m; i++) {
+      // Fisher-Yates partial shuffle to pick k random items
+      const pool = [...allPairs];
+      for (let j = 0; j < k; j++) {
+        const r = j + Math.floor(Math.random() * (pool.length - j));
+        [pool[j], pool[r]] = [pool[r], pool[j]];
+      }
+      const chosen   = pool.slice(0, k);
+      const xlGroups = _groupByXLName(chosen);
+      const json     = _buildJSONWithXL(xlGroups);
+      const label    = `${jobName}_combo_${String(i + 1).padStart(3, '0')}`;
+      json.name      = label;
+      files.push({ name: `${label}.json`, content: JSON.stringify(json, null, 2) });
+    }
+
+    await _downloadZip(files, `${jobName}_combos_k${k}_n${m}.zip`);
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Download ZIP';
+  }
+}
+
+/** Refresh batch export info labels (called on panel open and input changes). */
+function _updateBatchInfo() {
+  const n          = _getAllCrosslinkPairs().length;
+  const singleInfo = document.getElementById('batchSingleInfo');
+  if (singleInfo) {
+    singleInfo.textContent = `${n} pair${n !== 1 ? 's' : ''} → ${n} JSON file${n !== 1 ? 's' : ''}`;
+  }
+
+  const k         = parseInt(document.getElementById('batchComboK')?.value) || 5;
+  const m         = parseInt(document.getElementById('batchComboM')?.value) || 20;
+  const comboInfo = document.getElementById('batchComboInfo');
+  if (!comboInfo) return;
+  if (n === 0) {
+    comboInfo.textContent  = 'No crosslink pairs loaded.';
+    comboInfo.style.color  = 'var(--warning)';
+  } else if (k > n) {
+    comboInfo.textContent  = `⚠ k=${k} exceeds available pairs (${n}) — reduce k`;
+    comboInfo.style.color  = 'var(--warning)';
+  } else {
+    const coverage = n > 0 ? ((k / n) * 100).toFixed(0) : 0;
+    comboInfo.textContent  = `${m} jobs × ${k} XLs each  (${coverage}% of ${n} pairs per job)`;
+    comboInfo.style.color  = '';
+  }
 }
