@@ -1243,6 +1243,129 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   flex: 1;
 }
 
+/* ─── XL stats panel ────────────────────────────────────────────────────── */
+
+.xl-stats {
+  background: var(--bg-2, #f8f9fa);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+.xl-stats-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+.xl-stat-total  { font-weight: 700; color: var(--text); }
+.xl-stat-sep    { color: var(--text-3); }
+.xl-stat-inter  { color: #1a73e8; }
+.xl-stat-intra  { color: #e8710a; }
+.xl-stats-pairs { display: flex; flex-wrap: wrap; gap: 6px; }
+.xl-stat-pair {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.xl-stat-pair strong { color: var(--text); }
+
+/* Arc click flash animation */
+@keyframes xlRowFlash {
+  0%  { background: #fef3cd; }
+  50% { background: #fff3cd; box-shadow: 0 0 0 2px #f0b400; }
+  100% { background: transparent; box-shadow: none; }
+}
+.xl-row-flash { animation: xlRowFlash 1.2s ease-out forwards; }
+
+/* XL position / chain-ID validation warnings */
+.xl-pos-warn {
+  font-size: 10px;
+  color: var(--warning, #e8710a);
+  white-space: nowrap;
+}
+.chain-id-dup-warn {
+  font-size: 11px;
+  color: var(--warning, #e8710a);
+  margin-left: 4px;
+  cursor: default;
+}
+.input-warning { border-color: var(--warning, #e8710a) !important; }
+
+/* ─── Restore session banner ────────────────────────────────────────────── */
+
+.restore-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #e8f0fe;
+  border-bottom: 1px solid #c5d8fb;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: #1a73e8;
+}
+.restore-banner span { flex: 1; }
+
+/* ─── PDB/mmCIF import modal ─────────────────────────────────────────────── */
+
+.pdb-modal-body {
+  padding: 14px 20px;
+  overflow-y: auto;
+  max-height: 420px;
+}
+.pdb-summary-bar {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.pdb-chain-list { display: flex; flex-direction: column; gap: 4px; }
+
+.pdb-chain-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  transition: background 0.1s;
+}
+.pdb-chain-row:hover { background: var(--bg-hover, #f5f7ff); }
+
+.pdb-chain-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.pdb-chain-id   { font-family: var(--font-mono); font-weight: 700; min-width: 58px; }
+.pdb-entity-name { color: var(--text-2); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pdb-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.pdb-type-protein { background: #d2e3fc; color: #1a73e8; }
+.pdb-type-rna     { background: #ceead6; color: #1e8e3e; }
+.pdb-type-dna     { background: #fce8b2; color: #b06000; }
+.pdb-type-ligand  { background: #f3d7fb; color: #7627ba; }
+
+.pdb-seq-preview  { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdb-seq-len      { font-size: 10px; color: var(--text-3); white-space: nowrap; }
+
 /* ─── Modal footer ──────────────────────────────────────────────────────── */
 
 .modal-footer {

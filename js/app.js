@@ -8,6 +8,8 @@
 import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
 import { drawArcDiagram } from './viz.js';
 import { openImportModal, initImportModal, _shortProteinName } from './csv_import.js';
+import { openPdbModal, initPdbModal } from './pdb_import.js';
+import { updateXlStats } from './xl_stats.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _initPTMModal();
   _initJsonImport();
   initImportModal();
+  initPdbModal();
 
   // Add-entity buttons
   document.querySelectorAll('.btn-add-entity').forEach(btn => {
@@ -65,6 +68,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('csvFileInput').addEventListener('change', _handleCsvFile);
 
+  // PDB / mmCIF import
+  document.getElementById('importPdbBtn').addEventListener('click', () => {
+    document.getElementById('pdbFileInput').click();
+  });
+  document.getElementById('pdbFileInput').addEventListener('change', _handlePdbFile);
+
+  // localStorage restore banner
+  _checkRestoreSession();
+
   // Close dropdown on outside click
   document.addEventListener('click', e => {
     const dd = document.getElementById('presets-dropdown');
@@ -102,6 +114,7 @@ export function addSequenceCard(type) {
           <label>Chain ID(s)</label>
           <input type="text" class="seq-chain-id" placeholder="A" value="${_nextChainId()}"
                  autocomplete="off" spellcheck="false" data-seqid="${id}">
+          <span class="chain-id-dup-warn" style="display:none" title="Duplicate chain ID">⚠</span>
         </div>
       </div>
 
@@ -724,6 +737,7 @@ function _addXlPair(card, xlId, defaults = {}) {
     <span class="pair-sep">↔</span>
     <input type="text" class="xl-chain-b" placeholder="Chain" value="${defaults.chain2 || ''}" maxlength="4">
     <input type="number" class="xl-pos-b" placeholder="Res" value="${defaults.pos2 || ''}" min="1">
+    <span class="xl-pos-warn" style="display:none"></span>
     <button class="btn-icon btn-remove-pair" title="Remove pair">✕</button>`;
 
   row.querySelector('.btn-remove-pair').addEventListener('click', () => {
@@ -734,6 +748,7 @@ function _addXlPair(card, xlId, defaults = {}) {
   });
 
   row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateViz));
+  wireXlPairRowHover(row);
   container.appendChild(row);
 }
 
@@ -1358,6 +1373,8 @@ function _copyJSON() {
 
 // ─── Arc Diagram Update ───────────────────────────────────────────────────────
 
+let _autoSaveTimer = null;
+
 export function updateViz() {
   const svg = document.getElementById('arc-svg');
   if (!svg) return;
@@ -1367,6 +1384,13 @@ export function updateViz() {
   const ssBonds  = _readSsBondsFromDOM();
 
   drawArcDiagram(svg, chains, xlGroups, ssBonds);
+  _rewireArcEvents(svg);
+  updateXlStats();
+  _validateAll();
+
+  // Debounced auto-save
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(_tryAutoSave, 1500);
 }
 
 function _readChainsFromDOM() {
@@ -1585,4 +1609,220 @@ function _updateBatchInfo() {
     comboInfo.textContent  = `${m} jobs × ${k} XLs each  (${coverage}% of ${n} pairs per job)`;
     comboInfo.style.color  = '';
   }
+}
+
+// ─── Arc click ↔ pair row highlight ──────────────────────────────────────────
+
+function _rewireArcEvents(svg) {
+  svg.querySelectorAll('.xl-arc').forEach(arc => {
+    arc.addEventListener('click', () => {
+      const [c1, p1, c2, p2] = arc.getAttribute('data-key').split(':');
+      let found = null;
+      document.querySelectorAll('.xl-pair-row').forEach(row => {
+        if (row.querySelector('.xl-chain-a')?.value.trim() === c1 &&
+            String(row.querySelector('.xl-pos-a')?.value).trim() === p1 &&
+            row.querySelector('.xl-chain-b')?.value.trim() === c2 &&
+            String(row.querySelector('.xl-pos-b')?.value).trim() === p2) {
+          found = row;
+        }
+      });
+      if (found) {
+        found.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        found.classList.remove('xl-row-flash');
+        // Force reflow so animation restarts
+        void found.offsetWidth;
+        found.classList.add('xl-row-flash');
+      }
+    });
+  });
+}
+
+export function wireXlPairRowHover(row) {
+  row.addEventListener('mouseenter', () => {
+    const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+    const p1 = row.querySelector('.xl-pos-a')?.value.trim();
+    const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+    const p2 = row.querySelector('.xl-pos-b')?.value.trim();
+    if (!c1 || !p1 || !c2 || !p2) return;
+    const key = `${c1}:${p1}:${c2}:${p2}`;
+    document.querySelectorAll(`.xl-arc[data-key="${CSS.escape(key)}"]`).forEach(arc => {
+      arc.setAttribute('stroke-width', '3.5');
+      arc.setAttribute('opacity', '1');
+    });
+  });
+  row.addEventListener('mouseleave', () => {
+    document.querySelectorAll('.xl-arc').forEach(arc => {
+      arc.setAttribute('stroke-width', '1.8');
+      arc.setAttribute('opacity', '0.8');
+    });
+  });
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+function _validateAll() {
+  _checkDuplicateChainIds();
+  _checkXlPositions();
+}
+
+function _checkDuplicateChainIds() {
+  const seen = {};
+  document.querySelectorAll('.seq-card').forEach(card => {
+    const input = card.querySelector('.seq-chain-id');
+    if (!input) return;
+    const val = input.value.trim();
+    if (!val) return;
+    // Multi-chain (comma-separated)
+    val.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
+      if (!seen[id]) seen[id] = [];
+      seen[id].push(input);
+    });
+  });
+
+  document.querySelectorAll('.seq-chain-id').forEach(input => {
+    const warn = input.closest('.seq-chain-id-wrap')?.querySelector('.chain-id-dup-warn');
+    const ids  = (input.value.trim()).split(',').map(s => s.trim()).filter(Boolean);
+    const isDup = ids.some(id => seen[id] && seen[id].length > 1);
+    if (warn) warn.style.display = isDup ? 'inline' : 'none';
+    input.classList.toggle('input-warning', isDup);
+  });
+}
+
+function _checkXlPositions() {
+  // Build chain → sequence length map
+  const chainLen = {};
+  document.querySelectorAll('.seq-card').forEach(card => {
+    const chainRaw = card.querySelector('.seq-chain-id')?.value.trim() || '';
+    const seq      = card.querySelector('.seq-textarea')?.value.replace(/\s/g, '') || '';
+    const len      = seq.length;
+    if (!len) return;
+    chainRaw.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
+      chainLen[id] = len;
+    });
+  });
+
+  document.querySelectorAll('.xl-pair-row').forEach(row => {
+    const warn = row.querySelector('.xl-pos-warn');
+    const c1   = row.querySelector('.xl-chain-a')?.value.trim();
+    const p1   = parseInt(row.querySelector('.xl-pos-a')?.value) || 0;
+    const c2   = row.querySelector('.xl-chain-b')?.value.trim();
+    const p2   = parseInt(row.querySelector('.xl-pos-b')?.value) || 0;
+
+    let msg = '';
+    if (c1 && p1 && chainLen[c1] && p1 > chainLen[c1]) {
+      msg = `${c1}: pos ${p1} > len ${chainLen[c1]}`;
+    } else if (c2 && p2 && chainLen[c2] && p2 > chainLen[c2]) {
+      msg = `${c2}: pos ${p2} > len ${chainLen[c2]}`;
+    }
+
+    if (warn) {
+      warn.textContent   = msg ? `⚠ ${msg}` : '';
+      warn.style.display = msg ? 'inline' : 'none';
+    }
+  });
+}
+
+// ─── localStorage auto-save / restore ────────────────────────────────────────
+
+const LS_KEY      = 'af3x_autosave';
+const LS_TIME_KEY = 'af3x_autosave_time';
+
+function _tryAutoSave() {
+  try {
+    const json = _buildJSON();
+    localStorage.setItem(LS_KEY, JSON.stringify(json));
+    localStorage.setItem(LS_TIME_KEY, new Date().toISOString());
+  } catch { /* ignore if form is incomplete */ }
+}
+
+function _checkRestoreSession() {
+  const saved = localStorage.getItem(LS_KEY);
+  const time  = localStorage.getItem(LS_TIME_KEY);
+  if (!saved) return;
+
+  const banner = document.getElementById('restoreBanner');
+  if (!banner) return;
+
+  const when = time ? new Date(time).toLocaleString() : 'previously';
+  banner.querySelector('#restoreBannerTime').textContent = when;
+  banner.style.display = 'flex';
+
+  document.getElementById('restoreSessionBtn').addEventListener('click', () => {
+    try {
+      const json = JSON.parse(saved);
+      _populateFromJSON(json);
+      banner.style.display = 'none';
+    } catch (e) {
+      alert('Could not restore session: ' + e.message);
+    }
+  });
+
+  document.getElementById('dismissRestoreBtn').addEventListener('click', () => {
+    banner.style.display = 'none';
+    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(LS_TIME_KEY);
+  });
+}
+
+// ─── PDB / mmCIF import ───────────────────────────────────────────────────────
+
+function _handlePdbFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    openPdbModal(ev.target.result, _onPdbImport);
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function _onPdbImport(chains) {
+  // Assign chain IDs A, B, C... starting after the last existing card
+  const existingIds = new Set();
+  document.querySelectorAll('.seq-chain-id').forEach(el => {
+    (el.value || '').split(',').map(s => s.trim()).filter(Boolean).forEach(id => existingIds.add(id));
+  });
+
+  let nextCharCode = 65; // 'A'
+  function _nextFreeId() {
+    while (existingIds.has(String.fromCharCode(nextCharCode)) && nextCharCode < 91) nextCharCode++;
+    const id = nextCharCode < 91 ? String.fromCharCode(nextCharCode) : `Z${nextCharCode - 90}`;
+    existingIds.add(id);
+    nextCharCode++;
+    return id;
+  }
+
+  chains.forEach(chain => {
+    const type = chain.type === 'dna' ? 'dna'
+               : chain.type === 'rna' ? 'rna'
+               : chain.type === 'ligand' ? 'ligand'
+               : 'protein';
+
+    addSequenceCard(type);
+    const card = document.querySelector('#sequences-container .seq-card:last-child');
+    if (!card) return;
+
+    const chainIdInput = card.querySelector('.seq-chain-id');
+    if (chainIdInput) chainIdInput.value = _nextFreeId();
+
+    if (type === 'ligand') {
+      // Switch to CCD tab and set the code
+      const ccdBtn = card.querySelector('[data-tab="ccd"]');
+      const smilesBtn = card.querySelector('[data-tab="smiles"]');
+      if (ccdBtn) ccdBtn.click();
+      const ccdInput = card.querySelector('.ligand-ccd');
+      if (ccdInput && chain.ccdCode) ccdInput.value = chain.ccdCode;
+    } else {
+      const ta = card.querySelector('.seq-textarea');
+      if (ta && chain.sequence) {
+        ta.value = chain.sequence;
+        const typeName = type === 'dna' ? 'dna' : type === 'rna' ? 'rna' : 'protein';
+        _autoValidateSeq(ta, typeName);
+        _updateRuler(card);
+      }
+    }
+  });
+
+  updateViz();
 }

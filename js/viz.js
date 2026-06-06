@@ -153,6 +153,8 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
   arc.setAttribute('opacity',      '0.8');
   if (isDash) arc.setAttribute('stroke-dasharray', '4 3');
   arc.setAttribute('class', 'xl-arc');
+  arc.setAttribute('data-key', `${pair.chain1}:${pair.pos1}:${pair.chain2}:${pair.pos2}`);
+  arc.style.cursor = 'pointer';
 
   // Tooltip via <title>
   const title = _el('title');
