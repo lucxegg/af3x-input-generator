@@ -168,7 +168,7 @@ function _draw() {
     _drawChainShape(svg, chain.type, ML, y, cw, BAR_H, color, chain.id);
 
     // Chain label with type prefix
-    const TYPE_PREFIX = { rna: '⊣ ', dna: '≡ ', ligand: '⬡ ' };
+    const TYPE_PREFIX = { rna: '― ', dna: '═ ', ligand: '⬡ ' };
     const lbl = _el('text');
     _attrs(lbl, { x: ML - 10, y: y + BAR_H / 2 + 5,
                   'text-anchor': 'end', 'font-size': 14,
@@ -189,22 +189,28 @@ function _draw() {
 
 function _drawChainShape(svg, type, x, y, w, h, color, chainId) {
   if (type === 'dna') {
-    // Two offset sine waves — double helix appearance
-    const amp = h * 0.22;
-    const n   = Math.max(3, Math.round(w / 18));
-    const dx  = w / n;
-    [[y + h * 0.28, -1], [y + h * 0.72, 1]].forEach(([yMid, phase]) => {
-      let d = `M ${x} ${yMid}`;
-      for (let i = 0; i < n; i++) {
-        const xi  = x + i * dx;
-        const dir = phase * (i % 2 === 0 ? -1 : 1);
-        d += ` C ${xi + dx * 0.3} ${yMid + dir * amp}, ${xi + dx * 0.7} ${yMid + dir * amp}, ${xi + dx} ${yMid}`;
-      }
-      const path = _el('path');
-      _attrs(path, { d, fill: 'none', stroke: color, 'stroke-width': 2.2,
-                     opacity: 0.88, class: 'topo-chain-bar', 'data-chainid': chainId || '' });
-      svg.appendChild(path);
+    // Full ladder — two rails + vertical rungs between them
+    const railH  = Math.max(2, h * 0.18);
+    const topY   = y + h * 0.08;
+    const botY   = y + h * 0.74;
+    const rungH  = botY - (topY + railH);
+    const nRungs = Math.max(2, Math.round(w / 13));
+    const sp     = w / (nRungs + 1);
+
+    [topY, botY].forEach(ry => {
+      const rail = _el('rect');
+      _attrs(rail, { x, y: ry, width: w, height: railH, rx: railH / 2,
+                     fill: color, opacity: 0.88,
+                     class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+      svg.appendChild(rail);
     });
+    for (let i = 1; i <= nRungs; i++) {
+      const rung = _el('rect');
+      _attrs(rung, { x: x + i * sp - 1, y: topY + railH,
+                     width: 2, height: rungH,
+                     fill: color, opacity: 0.7 });
+      svg.appendChild(rung);
+    }
   } else if (type === 'rna') {
     // Half-ladder (comb) — one rail + upward rungs → single-stranded RNA
     const railH  = Math.max(2, h * 0.18);

@@ -80,7 +80,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     _drawChainShape(svg, chain.type, MARGIN_LEFT, y, fillW, BAR_HEIGHT, color);
 
     // Chain label with type prefix
-    const TYPE_PREFIX = { rna: '⊣ ', dna: '≡ ', ligand: '⬡ ' };
+    const TYPE_PREFIX = { rna: '― ', dna: '═ ', ligand: '⬡ ' };
     const label = _el('text');
     label.setAttribute('x',           MARGIN_LEFT - 8);
     label.setAttribute('y',           y + BAR_HEIGHT / 2 + 4);
@@ -192,23 +192,32 @@ function _drawArc(svg, pair, chainRow, chains, chainBarW, maxLen, color, label, 
 
 function _drawChainShape(svg, type, x, y, w, h, color) {
   if (type === 'dna') {
-    // Two offset sine waves — double helix appearance
-    const amp = h * 0.22;
-    const n   = Math.max(3, Math.round(w / 18));
-    const dx  = w / n;
-    [[y + h * 0.28, -1], [y + h * 0.72, 1]].forEach(([yMid, phase]) => {
-      let d = `M ${x} ${yMid}`;
-      for (let i = 0; i < n; i++) {
-        const xi  = x + i * dx;
-        const dir = phase * (i % 2 === 0 ? -1 : 1);
-        d += ` C ${xi + dx * 0.3} ${yMid + dir * amp}, ${xi + dx * 0.7} ${yMid + dir * amp}, ${xi + dx} ${yMid}`;
-      }
-      const path = _el('path');
-      path.setAttribute('d', d); path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2.2');
-      path.setAttribute('opacity', '0.85');
-      svg.appendChild(path);
+    // Full ladder — two rails + vertical rungs between them
+    const railH  = Math.max(2, h * 0.18);
+    const topY   = y + h * 0.08;
+    const botY   = y + h * 0.74;
+    const rungH  = botY - (topY + railH);
+    const nRungs = Math.max(2, Math.round(w / 13));
+    const sp     = w / (nRungs + 1);
+
+    [topY, botY].forEach(ry => {
+      const rail = _el('rect');
+      rail.setAttribute('x', x);    rail.setAttribute('y', ry);
+      rail.setAttribute('width', w); rail.setAttribute('height', railH);
+      rail.setAttribute('rx', railH / 2); rail.setAttribute('fill', color);
+      rail.setAttribute('opacity', '0.85');
+      svg.appendChild(rail);
     });
+    for (let i = 1; i <= nRungs; i++) {
+      const rung = _el('rect');
+      rung.setAttribute('x',      x + i * sp - 1);
+      rung.setAttribute('y',      topY + railH);
+      rung.setAttribute('width',  2);
+      rung.setAttribute('height', rungH);
+      rung.setAttribute('fill',   color);
+      rung.setAttribute('opacity', '0.7');
+      svg.appendChild(rung);
+    }
   } else if (type === 'rna') {
     // Half-ladder (comb) — one rail + upward rungs → single-stranded RNA
     const railH  = Math.max(2, h * 0.18);
@@ -225,14 +234,14 @@ function _drawChainShape(svg, type, x, y, w, h, color) {
     svg.appendChild(rail);
 
     for (let i = 1; i <= nRungs; i++) {
-      const rx = _el('rect');
-      rx.setAttribute('x',      x + i * sp - 1);
-      rx.setAttribute('y',      railY - rungH);
-      rx.setAttribute('width',  2);
-      rx.setAttribute('height', rungH);
-      rx.setAttribute('fill',   color);
-      rx.setAttribute('opacity', '0.7');
-      svg.appendChild(rx);
+      const rung = _el('rect');
+      rung.setAttribute('x',      x + i * sp - 1);
+      rung.setAttribute('y',      railY - rungH);
+      rung.setAttribute('width',  2);
+      rung.setAttribute('height', rungH);
+      rung.setAttribute('fill',   color);
+      rung.setAttribute('opacity', '0.7');
+      svg.appendChild(rung);
     }
   } else if (type === 'ligand') {
     // Hexagon node — fixed size, centered
