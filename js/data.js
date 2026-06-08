@@ -20,6 +20,19 @@ export const XL_GROUP_COLORS = [
   '#9334e6', '#007b83', '#c01880', '#e37400',
 ];
 
+// Stroke-dasharray values for crosslink groups — each group gets a distinct line style.
+// Order: solid → long-dash → short-dash → dash-dot → dotted → very-long → dash-2dot → medium
+export const XL_DASH_PATTERNS = [
+  'none',
+  '9 3',
+  '3 3',
+  '10 3 2 3',
+  '2 2',
+  '15 3',
+  '6 2 2 2',
+  '5 2',
+];
+
 // ─── Crosslinker definitions ─────────────────────────────────────────────────
 export const CROSSLINKERS = [
   // Symmetric NHS-ester crosslinkers

@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AF3x Input Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -36,8 +39,8 @@
   <!-- ─── Main layout ─────────────────────────────────────────────────────── -->
   <div class="main-layout">
 
-    <!-- LEFT: Form ─────────────────────────────────────────────────────────── -->
-    <div class="form-col">
+    <!-- TOP: Job Settings + Sequences — full width -->
+    <div class="top-section">
 
       <!-- Job Settings -->
       <section class="card">
@@ -59,7 +62,7 @@
               Version
               <span class="label-hint" title="AF3x input format version (1–4)">?</span>
             </label>
-            <input type="number" id="inputVersion" value="4" min="1" max="4">
+            <input type="number" id="inputVersion" value="2" min="1" max="4">
           </div>
         </div>
       </section>
@@ -72,6 +75,13 @@
           <button class="btn btn-ghost btn-sm" id="importPdbBtn" style="margin-left:auto">
             Import PDB / mmCIF
           </button>
+          <button class="btn btn-ghost btn-sm" id="importFastaBtn" title="Import sequences from a FASTA file">
+            Import FASTA
+          </button>
+          <input type="file" id="fasta-import-file-input" accept=".fasta,.fa,.faa,.txt,.seq,.a2m" style="display:none">
+          <button class="btn btn-ghost btn-sm" id="selectXlBtn" title="Click residues to add crosslink pairs">
+            ⊕ Select XL residues
+          </button>
         </div>
         <div id="sequences-container"></div>
         <div class="add-entity-row">
@@ -81,6 +91,12 @@
           <button class="btn-add-entity ligand"  data-seqtype="ligand">+ Ligand</button>
         </div>
       </section>
+
+    </div><!-- /top-section -->
+
+    <!-- BOTTOM: Constraints | Topology — two-column -->
+    <div class="bottom-section">
+      <div class="constraints-col">
 
       <!-- Crosslinks -->
       <section class="card" id="crosslinks-card">
@@ -196,10 +212,10 @@
         </details>
       </div>
 
-    </div><!-- /form-col -->
+      </div><!-- /constraints-col -->
 
-    <!-- RIGHT: Viz + Output ──────────────────────────────────────────────────── -->
-    <div class="viz-col">
+      <!-- Topology + Output -->
+      <div class="viz-col">
       <div class="viz-sticky">
 
         <!-- Structure Topology -->
@@ -214,6 +230,7 @@
           <div id="arc-diagram-wrap">
             <svg id="arc-svg" width="100%" height="100"></svg>
           </div>
+          <div id="arc-legend"></div>
         </div>
 
         <!-- JSON Output -->
@@ -227,10 +244,12 @@
             </div>
           </div>
           <pre id="jsonOutput" class="json-output"><span class="json-placeholder">// Click "Generate JSON" to build output</span></pre>
+          <div id="json-validation-panel" style="display:none"></div>
         </div>
 
       </div>
-    </div><!-- /viz-col -->
+      </div><!-- /viz-col -->
+    </div><!-- /bottom-section -->
 
   </div><!-- /main-layout -->
 
@@ -420,12 +439,57 @@
           <span class="topo-modal-hint">Scroll to zoom · Drag background to pan · Drag protein bar to reorder</span>
         </div>
         <div class="topo-modal-actions">
-          <button id="topoResetView" class="btn btn-outline btn-sm">Reset view</button>
-          <button id="topoModalClose" class="btn btn-ghost btn-sm">✕</button>
+          <button id="topoResetView" class="btn btn-outline btn-sm"
+                  onclick="if(window._resetTopologyView) window._resetTopologyView()">Reset view</button>
+          <button id="topoModalClose" class="btn btn-ghost btn-sm"
+                  onclick="document.getElementById('topology-modal').style.display='none'">✕</button>
         </div>
       </div>
       <svg id="topology-expand-svg" class="topo-expand-svg"></svg>
     </div>
+  </div>
+
+  <!-- XL confirm popup (shown after second residue is selected) -->
+  <div id="xl-confirm-popup" style="display:none" role="dialog" aria-modal="true">
+    <div class="xl-confirm-pair-label" id="xl-confirm-pair-label"></div>
+    <div class="xl-confirm-section">
+      <label class="xl-confirm-radio-row">
+        <input type="radio" name="xlConfirmMode" id="xlModeExisting" value="existing" checked>
+        <span>Add to existing group:</span>
+      </label>
+      <select id="xlConfirmGroupSel" class="xl-confirm-sel"></select>
+    </div>
+    <div class="xl-confirm-section">
+      <label class="xl-confirm-radio-row">
+        <input type="radio" name="xlConfirmMode" id="xlModeNew" value="new">
+        <span>Create new group with:</span>
+      </label>
+      <select id="xlConfirmXlSel" class="xl-confirm-sel"></select>
+    </div>
+    <div class="xl-confirm-footer">
+      <button id="xlConfirmCancelBtn" class="btn btn-ghost btn-sm">Cancel</button>
+      <button id="xlConfirmAddBtn" class="btn btn-primary btn-sm">Add crosslink</button>
+    </div>
+  </div>
+
+  <!-- FASTA sequence selection modal -->
+  <div id="fasta-select-modal" style="display:none" role="dialog" aria-modal="true">
+    <div class="fasta-select-box">
+      <div class="fasta-select-header">
+        <span id="fasta-select-title">Select sequences to import</span>
+      </div>
+      <div id="fasta-select-list" class="fasta-select-list"></div>
+      <div class="fasta-select-footer">
+        <button id="fasta-select-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <button id="fasta-select-confirm" class="btn btn-primary btn-sm">Import selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- XL residue pick banner (fixed, shown when first residue is selected) -->
+  <div id="xl-pick-banner" role="status" aria-live="polite">
+    <span id="xl-pick-banner-text"></span>
+    <button id="xl-pick-cancel-btn">Cancel (Esc)</button>
   </div>
 
   <script type="module" src="js/app.js"></script>

@@ -10,7 +10,7 @@
  *   Escape / ✕         close
  */
 
-import { CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
+import { CHAIN_COLORS, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 
 const NS   = 'http://www.w3.org/2000/svg';
 const ML   = 94;   // left margin  (room for chain labels)
@@ -34,6 +34,12 @@ let _vb       = { x: 0, y: 0, w: 1200, h: 600 };
 const _drag   = { type: null };
 
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+export function resetTopologyView() {
+  _resetChainPositions();
+  _resetVb();
+  _draw();
+}
 
 export function openInteractiveTopology(chains, xlGroups, ssBonds) {
   _chains   = chains;
@@ -82,7 +88,20 @@ export function initInteractiveTopology() {
 
 function _draw() {
   const svg = _svg();
+  if (!svg) return;
   while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  if (_chains.length === 0) {
+    svg.setAttribute('viewBox', '0 0 600 200');
+    const t = _el('text');
+    _attrs(t, { x: '50%', y: '50%', 'text-anchor': 'middle',
+                'dominant-baseline': 'middle', 'font-size': 16,
+                'font-family': 'sans-serif', fill: '#9aa0a6' });
+    t.textContent = 'Add sequences to see topology';
+    svg.appendChild(t);
+    return;
+  }
+
   svg.setAttribute('viewBox', `${_vb.x} ${_vb.y} ${_vb.w} ${_vb.h}`);
 
   _appendDefs(svg);
@@ -92,33 +111,35 @@ function _draw() {
   const pxPerRes = (barW / _maxLen) * (displayW / _vb.w);
   const tickInt  = _tickInterval(pxPerRes);
 
+  // Per-chain bar widths — proportional to actual sequence length
+  const chainW = {};
+  _chains.forEach(chain => {
+    const len = chain.length || _maxLen;
+    chainW[chain.id] = Math.max(4, (len / _maxLen) * barW);
+  });
+
   // Crosslink arcs — drawn before bars so bars appear on top
   _xlGroups.forEach((grp, gi) => {
-    const color = grp.color || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
-    grp.pairs.forEach(pair => _drawArc(svg, pair, color, grp.name, false, barW));
+    grp.pairs.forEach(pair => {
+      const color = pair.color || grp.color || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
+      _drawArc(svg, pair, color, grp.name, pair.dashArray || 'none', chainW);
+    });
   });
-  _ssBonds.forEach(pair => _drawArc(svg, pair, '#f0b400', 'S–S', true, barW));
+  _ssBonds.forEach(pair => _drawArc(svg, pair, '#f0b400', 'S–S', '5 3', chainW));
 
   // Chain bars
   _chains.forEach(chain => {
     const y     = _chainY[chain.id];
     const color = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
     const len   = chain.length || _maxLen;
-    const fillW = Math.max(20, (len / _maxLen) * barW);
-
-    // Ghost track
-    const track = _el('rect');
-    _attrs(track, { x: ML, y, width: barW, height: BAR_H, rx: BAR_H / 2,
-                    fill: '#e8eaed', class: 'topo-chain-bar',
-                    'data-chainid': chain.id });
-    svg.appendChild(track);
+    const cw    = chainW[chain.id];
 
     // Residue tick marks
     if (tickInt) {
       const g = _el('g');
       g.setAttribute('class', 'topo-ticks');
       for (let r = tickInt; r <= len; r += tickInt) {
-        const tx      = ML + ((r - 1) / Math.max(len - 1, 1)) * fillW;
+        const tx      = ML + ((r - 1) / Math.max(len - 1, 1)) * cw;
         const isMajor = r % (tickInt * (tickInt >= 50 ? 2 : 5)) === 0 || tickInt >= 250;
         const tH      = isMajor ? 9 : 5;
 
@@ -143,9 +164,9 @@ function _draw() {
       svg.appendChild(g);
     }
 
-    // Filled bar
+    // Bar — width = proportional to sequence length, no grey ghost track
     const bar = _el('rect');
-    _attrs(bar, { x: ML, y, width: fillW, height: BAR_H, rx: BAR_H / 2,
+    _attrs(bar, { x: ML, y, width: cw, height: BAR_H, rx: BAR_H / 2,
                   fill: color, opacity: 0.88,
                   class: 'topo-chain-bar', 'data-chainid': chain.id });
     svg.appendChild(bar);
@@ -161,7 +182,7 @@ function _draw() {
     // Length hint
     if (chain.length) {
       const hint = _el('text');
-      _attrs(hint, { x: ML + fillW + 8, y: y + BAR_H / 2 + 5,
+      _attrs(hint, { x: ML + cw + 8, y: y + BAR_H / 2 + 5,
                      'text-anchor': 'start', 'font-size': 10, fill: '#9aa0a6' });
       hint.textContent = chain.length + ' aa';
       svg.appendChild(hint);
@@ -169,15 +190,16 @@ function _draw() {
   });
 }
 
-function _drawArc(svg, pair, color, xlLabel, isDash, barW) {
+// chainW: map of chain.id → bar pixel width for that chain
+function _drawArc(svg, pair, color, xlLabel, dashArray, chainW) {
   if (_chainY[pair.chain1] === undefined || _chainY[pair.chain2] === undefined) return;
 
   const c1 = _chains.find(c => c.id === pair.chain1);
   const c2 = _chains.find(c => c.id === pair.chain2);
   if (!c1 || !c2) return;
 
-  const x1 = _posX(pair.pos1, c1.length || _maxLen, barW);
-  const x2 = _posX(pair.pos2, c2.length || _maxLen, barW);
+  const x1 = _posX(pair.pos1, c1.length || _maxLen, chainW[pair.chain1]);
+  const x2 = _posX(pair.pos2, c2.length || _maxLen, chainW[pair.chain2]);
   const y1 = _chainY[pair.chain1];
   const y2 = _chainY[pair.chain2];
 
@@ -209,7 +231,7 @@ function _drawArc(svg, pair, color, xlLabel, isDash, barW) {
   const arc = _el('path');
   _attrs(arc, { d: pathD, fill: 'none', stroke: color, 'stroke-width': 2,
                 opacity: 0.75, class: 'topo-arc' });
-  if (isDash) arc.setAttribute('stroke-dasharray', '5 3');
+  if (dashArray && dashArray !== 'none') arc.setAttribute('stroke-dasharray', dashArray);
   grp.appendChild(arc);
 
   // Invisible wide hit area for easier hover
@@ -359,6 +381,8 @@ function _toSvg(svg, clientX, clientY) {
   pt.x = clientX; pt.y = clientY;
   return pt.matrixTransform(svg.getScreenCTM().inverse());
 }
+
+function _svg() { return document.getElementById('topology-expand-svg'); }
 
 function _el(tag) { return document.createElementNS(NS, tag); }
 

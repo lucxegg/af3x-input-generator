@@ -5,12 +5,12 @@
  * PTM picker, JSON generation, JSON import, and coordinates the arc diagram.
  */
 
-import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
+import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, CHAIN_COLORS, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 import { drawArcDiagram } from './viz.js';
 import { openImportModal, initImportModal, _shortProteinName } from './csv_import.js';
 import { openPdbModal, initPdbModal } from './pdb_import.js';
 import { updateXlStats } from './xl_stats.js';
-import { openInteractiveTopology, initInteractiveTopology } from './topology_interactive.js';
+import { openInteractiveTopology, initInteractiveTopology, resetTopologyView } from './topology_interactive.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,11 @@ let _bondCounter = 0;  // unique id for each bonded atom pair
 // active PTM picker context
 let _ptmContext = null;  // { seqId, modIdx }
 
+// XL residue pick state (click-to-add-XL in sequence display)
+let _xlPickMode  = false; // true when "Select XL residues" button is active
+let _xlPickState = null;  // null | { chainId, pos, spanEl }
+let _xlPendingPair = null; // null | { c1, p1, c2, p2 } — waiting for popup confirmation
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initImportModal();
   initPdbModal();
   try { initInteractiveTopology(); } catch (e) { console.warn('topology init:', e); }
+  window._resetTopologyView = resetTopologyView;
 
   // Add-entity buttons
   document.querySelectorAll('.btn-add-entity').forEach(btn => {
@@ -84,6 +90,38 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('pdbFileInput').addEventListener('change', _handlePdbFile);
 
+  // "Select XL residues" toggle button
+  document.getElementById('selectXlBtn')?.addEventListener('click', _toggleXlPickMode);
+
+  // XL pick: ESC cancels everything, banner cancel button
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (_xlPendingPair) { _closePendingPair(); return; }
+      if (_xlPickState)   { _clearPickState(); return; }
+      if (_xlPickMode)    { _toggleXlPickMode(); }
+    }
+  });
+  document.getElementById('xl-pick-cancel-btn')?.addEventListener('click', () => {
+    _clearPickState();
+    if (_xlPickMode) _toggleXlPickMode();
+  });
+
+  // XL confirm popup buttons
+  document.getElementById('xlConfirmCancelBtn')?.addEventListener('click', _closePendingPair);
+  document.getElementById('xlConfirmAddBtn')?.addEventListener('click', _commitXlFromPopup);
+
+  // Enable/disable group select based on radio
+  document.querySelectorAll('input[name="xlConfirmMode"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const existing = document.getElementById('xlModeExisting').checked;
+      document.getElementById('xlConfirmGroupSel').disabled = !existing;
+      document.getElementById('xlConfirmXlSel').disabled    = existing;
+    });
+  });
+
+  // Global FASTA import
+  _initGlobalFastaImport();
+
   // localStorage restore banner
   _checkRestoreSession();
 
@@ -97,6 +135,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Start with one protein sequence
   addSequenceCard('protein');
+
+  // Re-render sequence displays when window is resized
+  let _resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(() => {
+      document.querySelectorAll('.seq-card').forEach(card => {
+        const display = card.querySelector('.seq-display');
+        if (display && display.style.display !== 'none') _updateRuler(card);
+      });
+    }, 150);
+  });
 });
 
 // ─── Sequence Cards ───────────────────────────────────────────────────────────
@@ -133,6 +183,7 @@ export function addSequenceCard(type) {
       </div>
 
       <div class="seq-actions">
+        <button class="btn-icon btn-copy-chain" data-seqid="${id}" title="Duplicate chain (new chain ID, no crosslinks)">⧉</button>
         <button class="btn-icon btn-remove-seq" data-seqid="${id}" title="Remove">✕</button>
       </div>
 
@@ -146,6 +197,22 @@ export function addSequenceCard(type) {
 
   // Wire input mode tabs and interactive elements
   _wireSeqInputTabs(card, type, id);
+
+  card.querySelector('.btn-copy-chain').addEventListener('click', () => {
+    const seq = card.querySelector('.seq-textarea')?.value || '';
+    addSequenceCard(type);
+    // The new card is the last one — fill in the sequence
+    const all  = document.querySelectorAll('#sequences-container .seq-card');
+    const copy = all[all.length - 1];
+    if (copy) {
+      const ta = copy.querySelector('.seq-textarea');
+      if (ta && seq) {
+        ta.value = seq;
+        _autoValidateSeq(ta, type);
+        _updateRuler(copy);
+      }
+    }
+  });
 
   card.querySelector('.btn-remove-seq').addEventListener('click', () => {
     card.remove();
@@ -210,32 +277,17 @@ function _sequenceInputBlock(type, id) {
     <div class="seq-body">
       <div class="input-tabs">
         <button class="tab-btn active" data-tab="text">Sequence</button>
-        <button class="tab-btn" data-tab="fasta">FASTA</button>
-        <button class="tab-btn" data-tab="file">Upload</button>
         ${type === 'protein' ? '<button class="tab-btn" data-tab="uniprot">UniProt ID</button>' : ''}
       </div>
 
       <div class="tab-panel active" data-panel="text">
         <div class="seq-editor-wrap">
-          <pre class="seq-ruler" aria-hidden="true"></pre>
+          <pre class="seq-display" title="Click to edit"></pre>
           <textarea class="seq-textarea seq-validated"
                     placeholder="${placeholder}"
                     data-seqid="${id}" spellcheck="false"></textarea>
         </div>
         <div class="seq-meta"><span class="seq-length-hint"></span><span class="seq-val-msg"></span></div>
-      </div>
-
-      <div class="tab-panel" data-panel="fasta" style="display:none">
-        <textarea class="fasta-input" rows="4"
-                  placeholder=">My protein\nMKVLWAALL..."
-                  data-seqid="${id}" spellcheck="false"></textarea>
-        <button class="btn btn-outline btn-sm parse-fasta-btn" data-seqid="${id}">Parse FASTA</button>
-      </div>
-
-      <div class="tab-panel" data-panel="file" style="display:none">
-        <div class="file-drop-zone" data-seqid="${id}">
-          <span>Drag & drop a FASTA file, or <label class="file-browse-label">browse<input type="file" class="fasta-file-input" accept=".fasta,.fa,.txt" data-seqid="${id}"></label></span>
-        </div>
       </div>
 
       ${type === 'protein' ? `
@@ -303,9 +355,13 @@ function _advancedBlock(type, id) {
     <div class="adv-section">
       <div class="adv-section-header">
         <span>Structural Templates</span>
+        <label class="no-tpl-label" title="Output templates:[] — disables AF3 template search for this chain">
+          <input type="checkbox" class="no-templates-check" data-seqid="${id}">
+          Without templates
+        </label>
         <button class="btn btn-outline btn-xs add-tpl-btn" data-seqid="${id}">+ Add template</button>
       </div>
-      <p class="adv-hint">If no templates are added, AF3 searches automatically. Add at least one to override (empty list → template-free).</p>
+      <p class="adv-hint no-tpl-hint" data-seqid="${id}">If no templates are added, AF3 searches automatically.</p>
       <div class="tpl-container" data-seqid="${id}"></div>
     </div>` : '';
 
@@ -328,13 +384,20 @@ function _wireSeqInputTabs(card, type, id) {
     });
   });
 
-  // Sequence textarea: auto-uppercase + ruler + scroll sync
-  const seqTA = card.querySelector('.seq-textarea');
+  // Sequence textarea: edit mode + auto-uppercase
+  const seqTA   = card.querySelector('.seq-textarea');
+  const display = card.querySelector('.seq-display');
+
+  // Initial state: textarea visible (no sequence yet), display hidden
+  if (display) display.style.display = 'none';
+
   if (seqTA) {
     let _upperTimer = null;
 
+    // While typing: resize textarea, validate, update viz — stay in edit mode
     seqTA.addEventListener('input', () => {
-      _updateRuler(card);
+      seqTA.style.height = 'auto';
+      seqTA.style.height = seqTA.scrollHeight + 'px';
       _autoValidateSeq(seqTA, type);
       updateViz();
 
@@ -347,15 +410,54 @@ function _wireSeqInputTabs(card, type, id) {
           seqTA.value = upper;
           seqTA.setSelectionRange(pos, pos);
           _autoValidateSeq(seqTA, type);
-          _updateRuler(card);
+          seqTA.style.height = 'auto';
+          seqTA.style.height = seqTA.scrollHeight + 'px';
         }
       }, 1500);
     });
 
-    // Sync ruler scroll with textarea horizontal scroll
-    seqTA.addEventListener('scroll', () => {
-      const ruler = card.querySelector('.seq-ruler');
-      if (ruler) ruler.scrollLeft = seqTA.scrollLeft;
+    // On blur: switch to formatted display mode
+    seqTA.addEventListener('blur', () => _updateRuler(card));
+  }
+
+  // Click display → residue selection (only in pick mode) OR enter edit mode
+  if (display && seqTA) {
+    display.addEventListener('click', e => {
+      const resSpan = e.target.closest('.seq-res');
+      if (resSpan && (_xlPickMode || _xlPickState)) {
+        e.stopPropagation();
+        const pos      = parseInt(resSpan.dataset.pos);
+        const chainIds = (display.dataset.chainId || '').split(',').filter(Boolean);
+        if (pos && chainIds.length) _handleResidueClick(chainIds[0], pos, resSpan);
+        return;
+      }
+      // Background click in pick mode: cancel pending state only, don't enter edit mode
+      if (_xlPickState) { _clearPickState(); return; }
+      // Normal: enter edit mode
+      display.style.display = 'none';
+      seqTA.style.display   = 'block';
+      seqTA.style.height    = 'auto';
+      seqTA.style.height    = seqTA.scrollHeight + 'px';
+      seqTA.focus();
+    });
+
+    // Tooltip for XL-highlighted residues
+    const tooltip = document.getElementById('arc-tooltip');
+    display.addEventListener('mouseover', e => {
+      const hl = e.target.closest('.xl-hl');
+      if (hl && tooltip && hl.dataset.xlInfo) {
+        tooltip.textContent = hl.dataset.xlInfo;
+        tooltip.style.display = 'block';
+      }
+    });
+    display.addEventListener('mousemove', e => {
+      if (tooltip && tooltip.style.display === 'block') {
+        tooltip.style.left = (e.clientX + 16) + 'px';
+        tooltip.style.top  = (e.clientY - 32) + 'px';
+      }
+    });
+    display.addEventListener('mouseleave', () => {
+      if (tooltip) tooltip.style.display = 'none';
     });
   }
 
@@ -375,49 +477,25 @@ function _wireSeqInputTabs(card, type, id) {
     return;
   }
 
-  // FASTA parse button
-  const parseFastaBtn = card.querySelector('.parse-fasta-btn');
-  if (parseFastaBtn) {
-    parseFastaBtn.addEventListener('click', () => {
-      const ta = card.querySelector('.fasta-input');
-      const seq = _extractFasta(ta.value);
-      if (seq) _setSeqAndSwitchToText(card, seq, type);
-      else alert('No valid FASTA sequence found.');
-    });
-  }
-
-  // File drop / upload
-  const fileInput = card.querySelector('.fasta-file-input');
-  if (fileInput) {
-    fileInput.addEventListener('change', () => {
-      const file = fileInput.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        const seq = _extractFasta(e.target.result);
-        if (seq) _setSeqAndSwitchToText(card, seq, type);
-        else alert('No valid FASTA sequence found in file.');
-      };
-      reader.readAsText(file);
-    });
-  }
-
-  // Drag-and-drop
-  const dropZone = card.querySelector('.file-drop-zone');
-  if (dropZone) {
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const seq = _extractFasta(ev.target.result);
-        if (seq) _setSeqAndSwitchToText(card, seq, type);
-      };
-      reader.readAsText(file);
+  // Auto-detect FASTA paste in the sequence textarea
+  const seqTa = card.querySelector('.seq-textarea');
+  if (seqTa) {
+    seqTa.addEventListener('paste', e => {
+      // On next tick, check if pasted content looks like FASTA
+      setTimeout(() => {
+        if (seqTa.value.trimStart().startsWith('>') || seqTa.value.trimStart().startsWith(';')) {
+          const entries = _parseFastaAll(seqTa.value);
+          if (entries.length === 1) {
+            seqTa.value = entries[0].seq;
+            _autoValidateSeq(seqTa, type);
+            _updateRuler(card);
+            updateViz();
+          } else if (entries.length > 1) {
+            seqTa.value = '';
+            _showFastaSelectModal(entries, card);
+          }
+        }
+      }, 0);
     });
   }
 
@@ -443,6 +521,23 @@ function _wireSeqInputTabs(card, type, id) {
   const addTplBtn = card.querySelector('.add-tpl-btn');
   if (addTplBtn) {
     addTplBtn.addEventListener('click', () => _addTemplate(card, id));
+  }
+
+  // "Without templates" checkbox
+  const noTplCheck = card.querySelector('.no-templates-check');
+  if (noTplCheck) {
+    const _applyNoTpl = () => {
+      const off = noTplCheck.checked;
+      if (addTplBtn) addTplBtn.disabled = off;
+      const hint = card.querySelector('.no-tpl-hint');
+      if (hint) hint.textContent = off
+        ? 'Template search disabled for this chain (templates: [] in JSON).'
+        : 'If no templates are added, AF3 searches automatically.';
+      const tplContainer = card.querySelector('.tpl-container');
+      if (tplContainer) tplContainer.style.opacity = off ? '0.35' : '';
+    };
+    noTplCheck.addEventListener('change', _applyNoTpl);
+    _applyNoTpl();
   }
 
   // MSA mode selector
@@ -505,6 +600,138 @@ function _extractFasta(text) {
     seq += l.toUpperCase();
   }
   return seq || null;
+}
+
+function _parseFastaAll(text) {
+  const entries = [];
+  let current = null;
+  for (const line of text.split('\n')) {
+    const l = line.trim();
+    if (l.startsWith('>') || l.startsWith(';')) {
+      if (current && current.seq) entries.push(current);
+      current = { header: l.slice(1).trim(), seq: '' };
+    } else if (l && current) {
+      current.seq += l.toUpperCase().replace(/[^A-Za-z]/g, '');
+    }
+  }
+  if (current && current.seq) entries.push(current);
+  return entries;
+}
+
+function _showFastaSelectModal(entries, targetCard) {
+  const modal = document.getElementById('fasta-select-modal');
+  if (!modal) return;
+
+  const isSingle = !!targetCard;
+  const list     = modal.querySelector('#fasta-select-list');
+  const title    = modal.querySelector('#fasta-select-title');
+  const confirmBtn = modal.querySelector('#fasta-select-confirm');
+  if (!list || !confirmBtn) return;
+
+  if (title) title.textContent = isSingle
+    ? 'Multiple sequences found — select one to import:'
+    : `${entries.length} sequence${entries.length > 1 ? 's' : ''} found — select which to import:`;
+
+  list.innerHTML = entries.map((e, i) => `
+    <label class="fasta-select-row">
+      <input type="${isSingle ? 'radio' : 'checkbox'}" name="fasta-seq-pick" value="${i}" ${i === 0 ? 'checked' : ''}>
+      <span class="fasta-seq-header" title="${e.header || ''}">${e.header || `Sequence ${i + 1}`}</span>
+      <span class="fasta-seq-len">${e.seq.length} aa</span>
+    </label>
+  `).join('');
+
+  modal.dataset.targetCard = targetCard ? targetCard.dataset.seqid || '' : '';
+  modal._fastaEntries = entries;
+  modal._isSingle     = isSingle;
+
+  modal.style.display = 'flex';
+
+  confirmBtn.onclick = () => {
+    const checked = [...list.querySelectorAll('input:checked')].map(i => parseInt(i.value));
+    const selected = checked.map(i => entries[i]).filter(Boolean);
+    if (!selected.length) return;
+
+    if (isSingle) {
+      _setSeqAndSwitchToText(targetCard, selected[0].seq, _cardType(targetCard));
+    } else {
+      _importFastaEntries(selected);
+    }
+    modal.style.display = 'none';
+  };
+}
+
+function _cardType(card) {
+  return card?.querySelector('.seq-type-label')?.textContent.toLowerCase() || 'protein';
+}
+
+function _importFastaEntries(entries) {
+  entries.forEach(entry => {
+    addSequenceCard('protein');
+    // addSequenceCard appends the new card last
+    const cards = document.querySelectorAll('#sequences-container .seq-card');
+    const card  = cards[cards.length - 1];
+    if (!card) return;
+
+    const ta = card.querySelector('.seq-textarea');
+    if (ta) {
+      ta.value = entry.seq;
+      _autoValidateSeq(ta, 'protein');
+      _updateRuler(card);
+    }
+  });
+}
+
+function _initGlobalFastaImport() {
+  const btn   = document.getElementById('importFastaBtn');
+  const input = document.getElementById('fasta-import-file-input');
+  if (!btn || !input) return;
+
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = '';
+    const reader = new FileReader();
+    reader.onload = e => _handleFastaFileContent(e.target.result);
+    reader.readAsText(file);
+  });
+
+  // Global drag-and-drop on the sequences card
+  const seqCard = document.getElementById('sequences-card');
+  if (seqCard) {
+    seqCard.addEventListener('dragover', e => { e.preventDefault(); seqCard.classList.add('fasta-drag-over'); });
+    seqCard.addEventListener('dragleave', e => {
+      if (!seqCard.contains(e.relatedTarget)) seqCard.classList.remove('fasta-drag-over');
+    });
+    seqCard.addEventListener('drop', e => {
+      e.preventDefault();
+      seqCard.classList.remove('fasta-drag-over');
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => _handleFastaFileContent(ev.target.result);
+      reader.readAsText(file);
+    });
+  }
+
+  // Close modal on backdrop click
+  const modal = document.getElementById('fasta-select-modal');
+  if (modal) {
+    modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    modal.querySelector('#fasta-select-cancel')?.addEventListener('click', () => { modal.style.display = 'none'; });
+  }
+}
+
+function _handleFastaFileContent(text) {
+  let entries = _parseFastaAll(text);
+  // Fallback: raw sequence with no header
+  if (!entries.length) {
+    const seq = _extractFasta(text);
+    if (seq) entries = [{ header: 'Imported sequence', seq }];
+  }
+  if (!entries.length) { alert('No valid FASTA sequences found in file.'); return; }
+  // Always show modal so user can confirm / choose type
+  _showFastaSelectModal(entries, null);
 }
 
 function _setSeqAndSwitchToText(card, seq, type) {
@@ -582,22 +809,265 @@ function _autoValidateSeq(ta, type) {
 
 // ── Sequence ruler ────────────────────────────────────────────────────────────
 
-function _updateRuler(card) {
-  const seqTA = card.querySelector('.seq-textarea');
-  const ruler = card.querySelector('.seq-ruler');
-  if (!seqTA || !ruler) return;
-  const len = seqTA.value.replace(/[\s\r\n]/g, '').length;
-  ruler.textContent = len > 0 ? _generateRuler(len) : '';
+// How many residues fit per line given the container pixel width
+function _calcSeqLineLen(container) {
+  const w = container.clientWidth;
+  if (!w) return 60;
+  // JetBrains Mono 12px ≈ 7.22px per char; 24px padding; 8 chars for "     1  "
+  const charW     = 7.22;
+  const padChars  = Math.round(24 / charW);
+  const posChars  = 8;  // "     1  "
+  const sepChars  = 2;  // 2 spaces between groups of 10
+  const available = Math.floor(w / charW) - padChars - posChars;
+  // Each full group costs 10 chars + 2 spaces separator (except last)
+  // Approximate: available / (10 + sepChars) groups
+  const groups = Math.max(1, Math.floor(available / (10 + sepChars)));
+  return groups * 10;
 }
 
-function _generateRuler(seqLen) {
-  const arr = Array(seqLen).fill(' ');
-  for (let i = 10; i <= seqLen; i += 10) {
-    const s = String(i);
-    const start = i - s.length; // right-align so last digit sits at position i
-    for (let j = 0; j < s.length; j++) arr[start + j] = s[j];
+// Format sequence as grouped, numbered display.
+// xlHighlights: Map<pos (1-based) → { color: string, info: string }>
+function _formatSeqHTML(raw, lineLen, xlHighlights) {
+  const seq = raw.replace(/[^A-Za-z]/g, '').toUpperCase();
+  if (!seq) return '';
+  lineLen = lineLen || 60;
+  const hl = xlHighlights || new Map();
+
+  const rows = [];
+  for (let i = 0; i < seq.length; i += lineLen) {
+    const posLabel = String(i + 1).padStart(6);
+    const chunk    = seq.slice(i, i + lineLen);
+    const groups   = [];
+    for (let j = 0; j < chunk.length; j += 10) {
+      let groupHtml = '';
+      for (let k = 0; k < 10; k++) {
+        if (j + k >= chunk.length) break;
+        const absPos = i + j + k + 1;
+        const aa     = chunk[j + k];
+        const hlInfo = hl.get(absPos);
+        if (hlInfo) {
+          const info = hlInfo.info.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          groupHtml += `<span class="seq-res xl-hl" data-pos="${absPos}" data-xl-info="${info}" style="--hl-color:${hlInfo.color}">${aa}</span>`;
+        } else {
+          groupHtml += `<span class="seq-res" data-pos="${absPos}">${aa}</span>`;
+        }
+      }
+      groups.push(groupHtml);
+    }
+    rows.push(`<span class="seq-pos">${posLabel}</span>  ${groups.join('  ')}`);
   }
-  return arr.join('');
+  return rows.join('\n');
+}
+
+// Assign a unique color to every individual XL pair (global index across all groups).
+function _buildPairColorMap() {
+  const map = new Map();
+  let idx = 0;
+  document.querySelectorAll('.xl-group-card').forEach(card => {
+    card.querySelectorAll('.xl-pair-row').forEach(row => {
+      const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+      const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || null;
+      const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+      const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || null;
+      if (c1 && p1 && c2 && p2) {
+        map.set(`${c1}:${p1}:${c2}:${p2}`, XL_GROUP_COLORS[idx % XL_GROUP_COLORS.length]);
+        idx++;
+      }
+    });
+  });
+  return map;
+}
+
+// Build a highlight map for a given chain: pos → { color, info } for each XL pair that touches it.
+function _buildXlHighlights(chainId) {
+  const hl         = new Map();
+  const pairColors = _buildPairColorMap();
+  document.querySelectorAll('.xl-group-card').forEach((card, gi) => {
+    const xlName = card.querySelector('.xl-select')?.value || '';
+    card.querySelectorAll('.xl-pair-row').forEach(row => {
+      const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+      const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || null;
+      const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+      const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || null;
+      if (!c1 || !p1 || !c2 || !p2) return;
+      const color    = pairColors.get(`${c1}:${p1}:${c2}:${p2}`) || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
+      const lineInfo = `${xlName}: ${c1}:${p1} ↔ ${c2}:${p2}`;
+      const addHL = pos => {
+        if (!hl.has(pos)) hl.set(pos, { color, info: '' });
+        const e = hl.get(pos);
+        if (!e.info.includes(lineInfo)) e.info = e.info ? e.info + '\n' + lineInfo : lineInfo;
+      };
+      if (c1 === chainId) addHL(p1);
+      if (c2 === chainId) addHL(p2);
+    });
+  });
+  return hl;
+}
+
+function _updateRuler(card) {
+  const seqTA   = card.querySelector('.seq-textarea');
+  const display = card.querySelector('.seq-display');
+  if (!seqTA) return;
+
+  const seq = seqTA.value.trim();
+  if (display) {
+    if (seq) {
+      const lineLen  = _calcSeqLineLen(seqTA.parentElement);
+      const chainRaw = card.querySelector('.seq-chain-id')?.value.trim() || '';
+      const chainIds = chainRaw.includes(',')
+        ? chainRaw.split(',').map(s => s.trim()).filter(Boolean)
+        : chainRaw ? [chainRaw] : [];
+      const chainId  = chainIds[0] || '';
+      display.dataset.chainId = chainIds.join(',');
+
+      const xlHL = chainId ? _buildXlHighlights(chainId) : new Map();
+      display.innerHTML     = _formatSeqHTML(seq, lineLen, xlHL);
+      display.style.display = 'block';
+      seqTA.style.display   = 'none';
+
+      // Re-apply pending pick highlight if this chain has a pending residue
+      if (_xlPickState && chainIds.includes(_xlPickState.chainId)) {
+        const span = display.querySelector(`.seq-res[data-pos="${_xlPickState.pos}"]`);
+        if (span) { span.classList.add('xl-pick-pending'); _xlPickState.spanEl = span; }
+      }
+    } else {
+      display.style.display = 'none';
+      seqTA.style.display   = 'block';
+      seqTA.style.height    = 'auto';
+      seqTA.style.height    = seqTA.scrollHeight + 'px';
+    }
+  } else {
+    seqTA.style.height = 'auto';
+    seqTA.style.height = seqTA.scrollHeight + 'px';
+  }
+}
+
+// ── XL residue pick (click-to-add-XL) ────────────────────────────────────────
+
+function _toggleXlPickMode() {
+  _xlPickMode = !_xlPickMode;
+  const btn      = document.getElementById('selectXlBtn');
+  const seqCont  = document.getElementById('sequences-container');
+  btn?.classList.toggle('xl-pick-mode-on', _xlPickMode);
+  seqCont?.classList.toggle('sequences-xl-pick-active', _xlPickMode);
+  if (!_xlPickMode) _clearPickState();
+}
+
+function _clearPickState() {
+  if (_xlPickState?.spanEl) {
+    try { _xlPickState.spanEl.classList.remove('xl-pick-pending'); } catch {}
+  }
+  _xlPickState = null;
+  const banner = document.getElementById('xl-pick-banner');
+  if (banner) banner.classList.remove('visible');
+}
+
+function _closePendingPair() {
+  _xlPendingPair = null;
+  const popup = document.getElementById('xl-confirm-popup');
+  if (popup) popup.style.display = 'none';
+}
+
+function _handleResidueClick(chainId, pos, spanEl) {
+  if (!_xlPickState) {
+    // First residue selected
+    _xlPickState = { chainId, pos, spanEl };
+    spanEl.classList.add('xl-pick-pending');
+    const textEl = document.getElementById('xl-pick-banner-text');
+    if (textEl) textEl.textContent = `${chainId}:${pos} selected — click a second residue`;
+    document.getElementById('xl-pick-banner')?.classList.add('visible');
+  } else if (_xlPickState.chainId === chainId && _xlPickState.pos === pos) {
+    _clearPickState(); // same residue: cancel
+  } else {
+    // Second residue: show confirmation popup
+    const c1 = _xlPickState.chainId, p1 = _xlPickState.pos;
+    const c2 = chainId,             p2 = pos;
+    _clearPickState();
+    _showXlConfirmPopup(c1, p1, c2, p2);
+  }
+}
+
+function _showXlConfirmPopup(c1, p1, c2, p2) {
+  _xlPendingPair = { c1, p1, c2, p2 };
+
+  // Pair label
+  const label = document.getElementById('xl-confirm-pair-label');
+  if (label) label.textContent = `${c1}:${p1}  ↔  ${c2}:${p2}`;
+
+  // Populate existing-group dropdown
+  const groupSel = document.getElementById('xlConfirmGroupSel');
+  if (groupSel) {
+    groupSel.innerHTML = '';
+    const groups = document.querySelectorAll('.xl-group-card');
+    groups.forEach((card, i) => {
+      const name = card.querySelector('.xl-select')?.value || `Group ${i + 1}`;
+      const opt  = document.createElement('option');
+      opt.value       = card.dataset.id;
+      opt.textContent = `Group ${i + 1} — ${name}`;
+      groupSel.appendChild(opt);
+    });
+    const hasGroups = groups.length > 0;
+    groupSel.disabled = !hasGroups;
+
+    // Default mode
+    const modeExisting = document.getElementById('xlModeExisting');
+    const modeNew      = document.getElementById('xlModeNew');
+    if (modeExisting && modeNew) {
+      modeExisting.checked  = hasGroups;
+      modeNew.checked       = !hasGroups;
+      document.getElementById('xlConfirmXlSel').disabled = hasGroups;
+    }
+    if (!hasGroups && modeExisting) modeExisting.disabled = true;
+    else if (modeExisting) modeExisting.disabled = false;
+  }
+
+  // Populate crosslinker dropdown for new group
+  const xlSel = document.getElementById('xlConfirmXlSel');
+  if (xlSel && xlSel.options.length === 0) {
+    CROSSLINKERS.filter(xl => !xl.dynamic).forEach(xl => {
+      const opt = document.createElement('option');
+      opt.value = xl.name;
+      opt.textContent = xl.name;
+      if (xl.name === 'DSSO') opt.selected = true;
+      xlSel.appendChild(opt);
+    });
+  }
+
+  const popup = document.getElementById('xl-confirm-popup');
+  if (popup) popup.style.display = 'block';
+}
+
+function _commitXlFromPopup() {
+  if (!_xlPendingPair) return;
+  const { c1, p1, c2, p2 } = _xlPendingPair;
+  _closePendingPair();
+
+  const modeNew = document.getElementById('xlModeNew')?.checked;
+  let xlCard;
+
+  if (modeNew) {
+    // Create a new XL group
+    const xlName = document.getElementById('xlConfirmXlSel')?.value || 'DSSO';
+    addCrosslinkGroup({ name: xlName });
+    xlCard = document.querySelector('.xl-group-card:last-child');
+  } else {
+    // Use existing group
+    const xlId = document.getElementById('xlConfirmGroupSel')?.value;
+    xlCard = xlId
+      ? document.querySelector(`.xl-group-card[data-id="${xlId}"]`)
+      : document.querySelector('.xl-group-card');
+  }
+
+  if (!xlCard) return;
+  _addXlPair(xlCard, xlCard.dataset.id, { chain1: c1, pos1: p1, chain2: c2, pos2: p2 });
+
+  const newRow = xlCard.querySelector('.xl-pairs-container .xl-pair-row:last-child');
+  if (newRow) {
+    newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    void newRow.offsetWidth;
+    newRow.classList.add('xl-row-flash');
+  }
+  updateViz();
 }
 
 // ── Template helper ───────────────────────────────────────────────────────────
@@ -748,6 +1218,7 @@ function _addXlPair(card, xlId, defaults = {}) {
     <input type="text" class="xl-chain-b" placeholder="Chain" value="${defaults.chain2 || ''}" maxlength="4">
     <input type="number" class="xl-pos-b" placeholder="Res" value="${defaults.pos2 || ''}" min="1">
     <span class="xl-pos-warn" style="display:none"></span>
+    <span class="xl-chem-warn" style="display:none"></span>
     <button class="btn-icon btn-remove-pair" title="Remove pair">✕</button>`;
 
   row.querySelector('.btn-remove-pair').addEventListener('click', () => {
@@ -1127,6 +1598,15 @@ function _populateFromJSON(json) {
         if (modsEl) _addModRow(modsEl, card.dataset.id, code, pos);
       });
     }
+
+    // "Without templates" — restore if templates: [] was explicitly set
+    if (Array.isArray(data.templates) && data.templates.length === 0) {
+      const noTplCheck = card.querySelector('.no-templates-check');
+      if (noTplCheck) {
+        noTplCheck.checked = true;
+        noTplCheck.dispatchEvent(new Event('change'));
+      }
+    }
   });
 
   // Crosslinks
@@ -1162,9 +1642,55 @@ function _populateFromJSON(json) {
 
 // ─── JSON Generation ──────────────────────────────────────────────────────────
 
+function _fixAsymmetricXlOrder(jsonObj, chainSeqMap) {
+  const notes = [];
+  (jsonObj.crosslinks || []).forEach(group => {
+    const xl = CROSSLINKERS.find(x => group.name === x.name || group.name.startsWith(x.name));
+    if (!xl || xl.symmetric || xl.dynamic) return;
+
+    const end1 = xl.reactiveResidues[0]; // NHS-ester end — must be position 1
+
+    const isEnd1Compatible = (chain, pos) => {
+      if (!end1 || end1.includes('any AA')) return true;
+      const seq = chainSeqMap[chain];
+      if (!seq) return true; // unknown chain — skip
+      const aa = seq[pos - 1];
+      if (!aa) return true;
+      return end1.includes(aa) || (pos === 1 && end1.includes('N-term'));
+    };
+
+    (group.residue_pairs || []).forEach((pair, i) => {
+      const [c1, p1] = pair[0];
+      const [c2, p2] = pair[1];
+      if (!isEnd1Compatible(c1, p1) && isEnd1Compatible(c2, p2)) {
+        group.residue_pairs[i] = [[c2, p2], [c1, p1]];
+        const aa1 = chainSeqMap[c1]?.[p1 - 1] || '?';
+        const aa2 = chainSeqMap[c2]?.[p2 - 1] || '?';
+        notes.push(`${group.name}: swapped ${c1}:${aa1}${p1} ↔ ${c2}:${aa2}${p2} — ${aa2}${p2} placed first as NHS-ester (END1) anchor`);
+      }
+    });
+  });
+  return notes;
+}
+
 function generateJSON() {
   try {
     const output = _buildJSON();
+
+    // Build chainSeqMap for order correction
+    const csMap = {};
+    (output.sequences || []).forEach(entry => {
+      const type = Object.keys(entry)[0];
+      const data = entry[type];
+      if (data.sequence) {
+        const ids = Array.isArray(data.id) ? data.id : [data.id];
+        ids.forEach(id => { csMap[id] = data.sequence; });
+      }
+    });
+
+    // Auto-fix asymmetric XL pair order BEFORE serialising
+    const autoSwaps = _fixAsymmetricXlOrder(output, csMap);
+
     const pretty = JSON.stringify(output, null, 2);
 
     const el = document.getElementById('jsonOutput');
@@ -1177,10 +1703,111 @@ function generateJSON() {
     dl.download = (output.name || 'alphafold3_input') + '.json';
     dl.style.display = 'inline-block';
 
+    // Validate (auto-swaps already applied)
+    const { errors, warnings } = _validateGeneratedJSON(output);
+    _showValidationReport(errors, warnings, autoSwaps);
+
   } catch (err) {
     document.getElementById('jsonOutput').textContent = '// Error: ' + err.message;
+    _showValidationReport([err.message], []);
     console.error(err);
   }
+}
+
+function _validateGeneratedJSON(jsonObj) {
+  const errors   = [];
+  const warnings = [];
+
+  // Build chain → sequence map from the JSON object itself
+  const chainSeqMap = {};
+  (jsonObj.sequences || []).forEach(entry => {
+    const type = Object.keys(entry)[0];
+    const data = entry[type];
+    const ids  = Array.isArray(data.id) ? data.id : [data.id];
+    if (data.sequence) ids.forEach(id => { chainSeqMap[id] = data.sequence; });
+  });
+  const knownChains = new Set(Object.keys(chainSeqMap));
+
+  // Validate crosslink groups
+  (jsonObj.crosslinks || []).forEach(group => {
+    const xlName = group.name;
+    const xl     = CROSSLINKERS.find(x => xlName === x.name || xlName.startsWith(x.name));
+
+    (group.residue_pairs || []).forEach(pair => {
+      const [c1, p1] = pair[0];
+      const [c2, p2] = pair[1];
+
+      if (!knownChains.has(c1)) errors.push(`XL "${xlName}": chain "${c1}" is not defined in sequences`);
+      if (!knownChains.has(c2)) errors.push(`XL "${xlName}": chain "${c2}" is not defined in sequences`);
+
+      const seq1 = chainSeqMap[c1];
+      const seq2 = chainSeqMap[c2];
+      if (seq1 && p1 > seq1.length) errors.push(`XL "${xlName}": ${c1}:${p1} out of bounds (chain length ${seq1.length})`);
+      if (seq2 && p2 > seq2.length) errors.push(`XL "${xlName}": ${c2}:${p2} out of bounds (chain length ${seq2.length})`);
+
+      // Chemical compatibility (order already auto-corrected for asymmetric XLs)
+      if (xl && !xl.dynamic && seq1 && seq2) {
+        const r1 = xl.symmetric ? xl.reactiveResidues : xl.reactiveResidues[0];
+        const r2 = xl.symmetric ? xl.reactiveResidues : xl.reactiveResidues[1];
+
+        const chemOk = (seq, pos, reactive) => {
+          if (!reactive || reactive.includes('any AA')) return true;
+          const aa = seq[pos - 1];
+          if (!aa) return true;
+          if (reactive.includes(aa)) return true;
+          if (pos === 1 && reactive.includes('N-term')) return true;
+          return false;
+        };
+
+        if (!chemOk(seq1, p1, r1)) {
+          const aa = seq1[p1 - 1];
+          const allowed = r1.filter(r => r !== 'N-term').join(', ');
+          // For asymmetric, this is an error — auto-swap already happened but still incompatible
+          const msg = `XL "${xlName}": ${c1}:${aa}${p1} — ${aa} not reactive at END1 position [${allowed}]`;
+          if (!xl.symmetric) errors.push(msg); else warnings.push(msg);
+        }
+        if (!chemOk(seq2, p2, r2)) {
+          const aa = seq2[p2 - 1];
+          const allowed = r2.filter(r => r !== 'N-term').join(', ');
+          const msg = `XL "${xlName}": ${c2}:${aa}${p2} — ${aa} not reactive at END2 position [${allowed}]`;
+          warnings.push(msg); // END2 for asymmetric is often 'any AA'; keep as warning for symmetric
+        }
+      }
+    });
+  });
+
+  // Disulfide bonds
+  (jsonObj.disulfide_bonds || []).forEach(group => {
+    (group.residue_pairs || []).forEach(pair => {
+      const [c1, p1] = pair[0];
+      const [c2, p2] = pair[1];
+      if (!knownChains.has(c1)) errors.push(`S–S bond: chain "${c1}" is not defined`);
+      if (!knownChains.has(c2)) errors.push(`S–S bond: chain "${c2}" is not defined`);
+      // Cysteine check
+      if (chainSeqMap[c1]?.[p1-1] && chainSeqMap[c1][p1-1] !== 'C')
+        warnings.push(`S–S bond: ${c1}:${chainSeqMap[c1][p1-1]}${p1} — expected Cys (C)`);
+      if (chainSeqMap[c2]?.[p2-1] && chainSeqMap[c2][p2-1] !== 'C')
+        warnings.push(`S–S bond: ${c2}:${chainSeqMap[c2][p2-1]}${p2} — expected Cys (C)`);
+    });
+  });
+
+  return { errors, warnings };
+}
+
+function _showValidationReport(errors, warnings, infos = []) {
+  const panel = document.getElementById('json-validation-panel');
+  if (!panel) return;
+
+  if (errors.length === 0 && warnings.length === 0 && infos.length === 0) {
+    panel.innerHTML = '<div class="val-ok">✓ All checks passed — JSON is valid</div>';
+  } else {
+    let html = '';
+    errors.forEach(e   => { html += `<div class="val-error">✗ ${e}</div>`; });
+    warnings.forEach(w => { html += `<div class="val-warn">⚠ ${w}</div>`; });
+    infos.forEach(i    => { html += `<div class="val-info">↔ ${i}</div>`; });
+    panel.innerHTML = html;
+  }
+  panel.style.display = 'block';
 }
 
 function _buildJSON() {
@@ -1301,7 +1928,12 @@ function _buildJSON() {
         throw new Error(`Template in chain "${chainRaw}": query and template index counts must match.`);
       tplEntries.push(entry);
     });
-    if (tplEntries.length) seqData.templates = tplEntries;
+    const noTpl = card.querySelector('.no-templates-check')?.checked;
+    if (noTpl) {
+      seqData.templates = []; // explicitly disable template search
+    } else if (tplEntries.length) {
+      seqData.templates = tplEntries;
+    }
 
     output.sequences.push({ [type]: seqData });
   });
@@ -1395,8 +2027,15 @@ export function updateViz() {
 
   drawArcDiagram(svg, chains, xlGroups, ssBonds);
   _rewireArcEvents(svg);
+  _updateArcLegend(xlGroups);
   updateXlStats();
   _validateAll();
+
+  // Refresh XL highlights in all visible sequence displays
+  document.querySelectorAll('.seq-card').forEach(card => {
+    const display = card.querySelector('.seq-display');
+    if (display && display.style.display !== 'none') _updateRuler(card);
+  });
 
   // Debounced auto-save
   clearTimeout(_autoSaveTimer);
@@ -1427,6 +2066,7 @@ function _readChainsFromDOM() {
 
 function _readXlGroupsFromDOM() {
   const groups = [];
+  let pairIdx  = 0;  // global counter — gives each pair a unique color
   document.querySelectorAll('.xl-group-card').forEach((card, gi) => {
     const xlId   = card.dataset.id;
     const xlSel  = card.querySelector('.xl-select');
@@ -1437,7 +2077,8 @@ function _readXlGroupsFromDOM() {
       xlName  = xlName + n;
     }
 
-    const color = XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
+    const groupColor = XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
+    const dashArray  = XL_DASH_PATTERNS[gi % XL_DASH_PATTERNS.length];
     const pairs = [];
 
     card.querySelectorAll('.xl-pair-row').forEach(row => {
@@ -1445,10 +2086,14 @@ function _readXlGroupsFromDOM() {
       const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || null;
       const c2 = row.querySelector('.xl-chain-b')?.value.trim();
       const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || null;
-      if (c1 && p1 && c2 && p2) pairs.push({ chain1: c1, pos1: p1, chain2: c2, pos2: p2 });
+      if (c1 && p1 && c2 && p2) {
+        const color = XL_GROUP_COLORS[pairIdx % XL_GROUP_COLORS.length];
+        pairs.push({ chain1: c1, pos1: p1, chain2: c2, pos2: p2, color, dashArray });
+        pairIdx++;
+      }
     });
 
-    if (pairs.length) groups.push({ name: xlName, color, pairs });
+    if (pairs.length) groups.push({ name: xlName, color: groupColor, dashArray, pairs });
   });
   return groups;
 }
@@ -1463,6 +2108,24 @@ function _readSsBondsFromDOM() {
     if (c1 && p1 && c2 && p2) bonds.push({ chain1: c1, pos1: p1, chain2: c2, pos2: p2 });
   });
   return bonds;
+}
+
+function _updateArcLegend(xlGroups) {
+  const el = document.getElementById('arc-legend');
+  if (!el) return;
+  if (!xlGroups || xlGroups.length < 2) { el.innerHTML = ''; return; }
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  let html = '<span class="arc-legend-label">Crosslinker groups:</span>';
+  xlGroups.forEach(grp => {
+    const dash = grp.dashArray || 'none';
+    const color = grp.color || '#9aa0a6';
+    const svgLine = `<svg width="36" height="12" style="vertical-align:middle;margin:0 4px 0 2px">` +
+      `<line x1="2" y1="6" x2="34" y2="6" stroke="${color}" stroke-width="2.5"` +
+      (dash !== 'none' ? ` stroke-dasharray="${dash}"` : '') + `/></svg>`;
+    html += `<span class="arc-legend-item">${svgLine}${grp.name || '—'}</span>`;
+  });
+  el.innerHTML = html;
 }
 
 // ─── Batch export / Screening ─────────────────────────────────────────────────
@@ -1652,10 +2315,9 @@ function _rewireArcEvents(svg) {
       }
     });
 
-    // Hover → zoom into group bbox + show tooltip
+    // Hover → show tooltip
     group.addEventListener('mouseenter', () => {
       if (tooltip) { tooltip.textContent = label; tooltip.style.display = 'block'; }
-      _zoomToGroup(svg, group);
     });
 
     group.addEventListener('mousemove', e => {
@@ -1667,7 +2329,6 @@ function _rewireArcEvents(svg) {
 
     group.addEventListener('mouseleave', () => {
       if (tooltip) tooltip.style.display = 'none';
-      _restoreViewBox(svg);
     });
   });
 }
@@ -1781,35 +2442,99 @@ function _checkDuplicateChainIds() {
 }
 
 function _checkXlPositions() {
-  // Build chain → sequence length map
+  // Build chain → sequence maps
   const chainLen = {};
+  const chainSeq = {};
   document.querySelectorAll('.seq-card').forEach(card => {
     const chainRaw = card.querySelector('.seq-chain-id')?.value.trim() || '';
-    const seq      = card.querySelector('.seq-textarea')?.value.replace(/\s/g, '') || '';
-    const len      = seq.length;
-    if (!len) return;
+    const seq      = card.querySelector('.seq-textarea')?.value.replace(/\s/g, '').toUpperCase() || '';
+    if (!seq) return;
     chainRaw.split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
-      chainLen[id] = len;
+      chainLen[id] = seq.length;
+      chainSeq[id] = seq;
     });
   });
 
   document.querySelectorAll('.xl-pair-row').forEach(row => {
-    const warn = row.querySelector('.xl-pos-warn');
-    const c1   = row.querySelector('.xl-chain-a')?.value.trim();
-    const p1   = parseInt(row.querySelector('.xl-pos-a')?.value) || 0;
-    const c2   = row.querySelector('.xl-chain-b')?.value.trim();
-    const p2   = parseInt(row.querySelector('.xl-pos-b')?.value) || 0;
+    const posWarn  = row.querySelector('.xl-pos-warn');
+    const chemWarn = row.querySelector('.xl-chem-warn');
+    const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+    const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || 0;
+    const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+    const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || 0;
 
-    let msg = '';
+    // Position bounds
+    let posMsg = '';
     if (c1 && p1 && chainLen[c1] && p1 > chainLen[c1]) {
-      msg = `${c1}: pos ${p1} > len ${chainLen[c1]}`;
+      posMsg = `${c1}: pos ${p1} > len ${chainLen[c1]}`;
     } else if (c2 && p2 && chainLen[c2] && p2 > chainLen[c2]) {
-      msg = `${c2}: pos ${p2} > len ${chainLen[c2]}`;
+      posMsg = `${c2}: pos ${p2} > len ${chainLen[c2]}`;
+    }
+    if (posWarn) {
+      posWarn.textContent   = posMsg ? `⚠ ${posMsg}` : '';
+      posWarn.style.display = posMsg ? 'inline' : 'none';
     }
 
-    if (warn) {
-      warn.textContent   = msg ? `⚠ ${msg}` : '';
-      warn.style.display = msg ? 'inline' : 'none';
+    // Chemical compatibility
+    if (chemWarn) {
+      const xlCard = row.closest('.xl-group-card');
+      const xlName = xlCard?.querySelector('.xl-select')?.value;
+      const xl     = CROSSLINKERS.find(x => x.name === xlName);
+      let chemMsg  = '';
+      let isInfo   = false;
+
+      if (xl && !xl.dynamic && c1 && p1 && c2 && p2) {
+        const isOk = (chain, pos, reactive) => {
+          if (!reactive || reactive.includes('any AA')) return true;
+          const seq = chainSeq[chain];
+          if (!seq) return true;
+          const aa = seq[pos - 1];
+          if (!aa) return true;
+          return reactive.includes(aa) || (pos === 1 && reactive.includes('N-term'));
+        };
+
+        if (xl.symmetric) {
+          const r = xl.reactiveResidues;
+          const bad = [];
+          if (!isOk(c1, p1, r)) {
+            const aa = chainSeq[c1]?.[p1 - 1] || '?';
+            bad.push(`${c1}:${aa}${p1} not reactive [${r.filter(x => x !== 'N-term').join('/')}]`);
+          }
+          if (!isOk(c2, p2, r)) {
+            const aa = chainSeq[c2]?.[p2 - 1] || '?';
+            bad.push(`${c2}:${aa}${p2} not reactive [${r.filter(x => x !== 'N-term').join('/')}]`);
+          }
+          chemMsg = bad.join(' · ');
+        } else {
+          // Asymmetric: check both forward and reversed order
+          const end1 = xl.reactiveResidues[0];
+          const end2 = xl.reactiveResidues[1];
+          const fwdOk = isOk(c1, p1, end1) && isOk(c2, p2, end2);
+          const revOk = isOk(c2, p2, end1) && isOk(c1, p1, end2);
+          if (fwdOk) {
+            chemMsg = ''; // correct order
+          } else if (revOk) {
+            chemMsg = '↔ order will be auto-corrected on export';
+            isInfo  = true;
+          } else {
+            // Neither order works
+            const aa1 = chainSeq[c1]?.[p1 - 1] || '?';
+            const aa2 = chainSeq[c2]?.[p2 - 1] || '?';
+            const allowed = end1.filter(x => x !== 'N-term').join('/');
+            if (!isOk(c1, p1, end1) && !isOk(c2, p2, end1)) {
+              chemMsg = `neither position has END1-reactive residue [${allowed}]`;
+            } else {
+              chemMsg = !isOk(c1, p1, end1)
+                ? `${c1}:${aa1}${p1} needs END1-reactive [${allowed}]`
+                : `${c2}:${aa2}${p2} needs END2-reactive`;
+            }
+          }
+        }
+      }
+
+      chemWarn.textContent = chemMsg ? (isInfo ? chemMsg : `⚗ ${chemMsg}`) : '';
+      chemWarn.style.display = chemMsg ? 'inline' : 'none';
+      chemWarn.classList.toggle('is-info', isInfo);
     }
   });
 }

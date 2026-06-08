@@ -3,7 +3,7 @@
 AF3x Input Generator — xkit conversion server
 ==============================================
 Converts any pyXLMS-supported crosslink format (pLink, MeroX, XlinkX, …)
-to xiNET CSV, which the web importer can read directly.
+to xiVIEW CSV, which the web importer can read directly.
 
 Usage
 -----
@@ -94,7 +94,7 @@ def convert():
             tmp_path = tmp.name
 
         xlinks = read(tmp_path, engine=engine, crosslinker=crosslinker)
-        df = xlinks.export_to("xinet")
+        df = xlinks.export_to("xiview")
 
         buf = io.StringIO()
         df.to_csv(buf, index=False)

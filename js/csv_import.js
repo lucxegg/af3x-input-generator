@@ -297,7 +297,7 @@ async function _doConvert() {
       throw new Error(json.error || `Server error ${res.status}`);
     }
 
-    // Parse the returned xiNET CSV and switch to normal import UI
+    // Parse the returned xiVIEW CSV and switch to normal import UI
     const parsed = parseCSVFile(json.csv);
     if (!parsed || !parsed.pairs.length) {
       throw new Error('Conversion returned empty result — check engine and crosslinker name.');
@@ -306,7 +306,7 @@ async function _doConvert() {
     _modalData = parsed;
     document.getElementById('csvConversionSection').style.display = 'none';
     document.getElementById('csvFormatBadge').textContent =
-      `pyXLMS → xiNET (${engine}, ${crosslinker})`;
+      `pyXLMS → xiVIEW (${engine}, ${crosslinker})`;
     document.getElementById('csvTotalCount').textContent = `${parsed.pairs.length} pairs`;
     _showMainContent(parsed);
 

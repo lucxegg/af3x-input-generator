@@ -65,24 +65,19 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
 
   const maxLen = Math.max(...chains.map(c => c.length || 1));
 
+  // Per-chain bar widths proportional to sequence length
+  const chainBarW = {};
+  chains.forEach(c => {
+    chainBarW[c.id] = Math.max(4, ((c.length || maxLen) / maxLen) * barWidth);
+  });
+
   // ── Chain bars ───────────────────────────────────────────────────────────
   chains.forEach((chain, rowIdx) => {
     const y        = MARGIN_TOP + rowIdx * ROW_STRIDE;
     const color    = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
-    const chainLen = chain.length || maxLen;
+    const fillW    = chainBarW[chain.id];
 
-    // Background track
-    const track = _el('rect');
-    track.setAttribute('x',      MARGIN_LEFT);
-    track.setAttribute('y',      y);
-    track.setAttribute('width',  barWidth);
-    track.setAttribute('height', BAR_HEIGHT);
-    track.setAttribute('rx',     BAR_HEIGHT / 2);
-    track.setAttribute('fill',   '#e8eaed');
-    svg.appendChild(track);
-
-    // Filled bar
-    const fillW = chainLen === maxLen ? barWidth : Math.max(20, (chainLen / maxLen) * barWidth);
+    // Bar — proportional width, no grey ghost track
     const bar = _el('rect');
     bar.setAttribute('x',      MARGIN_LEFT);
     bar.setAttribute('y',      y);
@@ -120,21 +115,21 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
 
   // ── Crosslink arcs ───────────────────────────────────────────────────────
   xlGroups.forEach((grp, gi) => {
-    const color = grp.color || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
     grp.pairs.forEach(pair => {
-      _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, grp.name, false);
+      const color = pair.color || grp.color || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
+      _drawArc(svg, pair, chainRow, chains, chainBarW, maxLen, color, grp.name, pair.dashArray || 'none');
     });
   });
 
   // ── Disulfide arcs ───────────────────────────────────────────────────────
   ssBonds.forEach(pair => {
-    _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, '#f0b400', 'S–S', true);
+    _drawArc(svg, pair, chainRow, chains, chainBarW, maxLen, '#f0b400', 'S–S', '5 3');
   });
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, isDash) {
+function _drawArc(svg, pair, chainRow, chains, chainBarW, maxLen, color, label, dashArray) {
   const r1 = chainRow[pair.chain1];
   const r2 = chainRow[pair.chain2];
   if (r1 === undefined || r2 === undefined) return;
@@ -142,8 +137,8 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
   const c1 = chains[r1];
   const c2 = chains[r2];
 
-  const x1    = _posX(pair.pos1, c1.length || maxLen, maxLen, barWidth);
-  const x2    = _posX(pair.pos2, c2.length || maxLen, maxLen, barWidth);
+  const x1    = _posX(pair.pos1, c1.length || maxLen, chainBarW[pair.chain1]);
+  const x2    = _posX(pair.pos2, c2.length || maxLen, chainBarW[pair.chain2]);
   const yBar1 = MARGIN_TOP + r1 * ROW_STRIDE;
   const yBar2 = MARGIN_TOP + r2 * ROW_STRIDE;
 
@@ -188,7 +183,7 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
   arc.setAttribute('stroke',       color);
   arc.setAttribute('stroke-width', '2');
   arc.setAttribute('opacity',      '0.75');
-  if (isDash) arc.setAttribute('stroke-dasharray', '5 3');
+  if (dashArray && dashArray !== 'none') arc.setAttribute('stroke-dasharray', dashArray);
   arc.setAttribute('class', 'xl-arc');
   group.appendChild(arc);
 
@@ -203,7 +198,7 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
   svg.appendChild(group);
 }
 
-function _posX(resNum, chainLen, maxLen, barWidth) {
+function _posX(resNum, chainLen, barWidth) {
   const frac = Math.min(1, Math.max(0, (resNum - 1) / Math.max(chainLen - 1, 1)));
   return MARGIN_LEFT + frac * barWidth;
 }
