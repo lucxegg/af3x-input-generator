@@ -164,19 +164,16 @@ function _draw() {
       svg.appendChild(g);
     }
 
-    // Bar — width = proportional to sequence length, no grey ghost track
-    const bar = _el('rect');
-    _attrs(bar, { x: ML, y, width: cw, height: BAR_H, rx: BAR_H / 2,
-                  fill: color, opacity: 0.88,
-                  class: 'topo-chain-bar', 'data-chainid': chain.id });
-    svg.appendChild(bar);
+    // Bar / shape — type-specific
+    _drawChainShape(svg, chain.type, ML, y, cw, BAR_H, color, chain.id);
 
-    // Chain label
+    // Chain label with type prefix
+    const TYPE_PREFIX = { rna: '~ ', dna: '= ', ligand: '⬡ ' };
     const lbl = _el('text');
     _attrs(lbl, { x: ML - 10, y: y + BAR_H / 2 + 5,
                   'text-anchor': 'end', 'font-size': 14,
                   'font-family': 'monospace', 'font-weight': 700, fill: color });
-    lbl.textContent = chain.label || chain.id;
+    lbl.textContent = (TYPE_PREFIX[chain.type] || '') + (chain.label || chain.id);
     svg.appendChild(lbl);
 
     // Length hint
@@ -184,10 +181,57 @@ function _draw() {
       const hint = _el('text');
       _attrs(hint, { x: ML + cw + 8, y: y + BAR_H / 2 + 5,
                      'text-anchor': 'start', 'font-size': 10, fill: '#9aa0a6' });
-      hint.textContent = chain.length + ' aa';
+      hint.textContent = chain.type === 'ligand' ? 'ligand' : chain.length + ' aa';
       svg.appendChild(hint);
     }
   });
+}
+
+function _drawChainShape(svg, type, x, y, w, h, color, chainId) {
+  if (type === 'dna') {
+    const th = h * 0.32;
+    [y + h * 0.08, y + h * 0.60].forEach(ty => {
+      const r = _el('rect');
+      _attrs(r, { x, y: ty, width: w, height: th, rx: th / 2,
+                  fill: color, opacity: 0.88,
+                  class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+      svg.appendChild(r);
+    });
+  } else if (type === 'rna') {
+    const yMid = y + h / 2;
+    const amp  = h * 0.38;
+    const n    = Math.max(3, Math.round(w / 18));
+    const dx   = w / n;
+    let d = `M ${x} ${yMid}`;
+    for (let i = 0; i < n; i++) {
+      const xi  = x + i * dx;
+      const dir = i % 2 === 0 ? -1 : 1;
+      d += ` C ${xi + dx * 0.3} ${yMid + dir * amp}, ${xi + dx * 0.7} ${yMid + dir * amp}, ${xi + dx} ${yMid}`;
+    }
+    const path = _el('path');
+    _attrs(path, { d, fill: 'none', stroke: color, 'stroke-width': 2.5,
+                   opacity: 0.88, class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+    svg.appendChild(path);
+  } else if (type === 'ligand') {
+    const r  = h * 0.72;
+    const cx = x + Math.min(w, r * 2);
+    const cy = y + h / 2;
+    const pts = Array.from({ length: 6 }, (_, i) => {
+      const a = (Math.PI / 3) * i - Math.PI / 6;
+      return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
+    }).join(' ');
+    const hex = _el('polygon');
+    _attrs(hex, { points: pts, fill: color, opacity: 0.88,
+                  class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+    svg.appendChild(hex);
+  } else {
+    // Protein: solid rounded rect
+    const bar = _el('rect');
+    _attrs(bar, { x, y, width: w, height: h, rx: h / 2,
+                  fill: color, opacity: 0.88,
+                  class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+    svg.appendChild(bar);
+  }
 }
 
 // chainW: map of chain.id → bar pixel width for that chain

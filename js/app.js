@@ -176,6 +176,13 @@ export function addSequenceCard(type) {
                  autocomplete="off" spellcheck="false" data-seqid="${id}">
           <span class="chain-id-dup-warn" style="display:none" title="Duplicate chain ID">⚠</span>
         </div>
+        <button class="btn-copy-chain" data-seqid="${id}" title="Duplicate chain (new chain ID, no crosslinks)">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M3 11H2.5A1.5 1.5 0 0 1 1 9.5v-7A1.5 1.5 0 0 1 2.5 1h7A1.5 1.5 0 0 1 11 2.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+          Clone
+        </button>
       </div>
 
       <div class="seq-right">
@@ -183,7 +190,6 @@ export function addSequenceCard(type) {
       </div>
 
       <div class="seq-actions">
-        <button class="btn-icon btn-copy-chain" data-seqid="${id}" title="Duplicate chain (new chain ID, no crosslinks)">⧉</button>
         <button class="btn-icon btn-remove-seq" data-seqid="${id}" title="Remove">✕</button>
       </div>
 
@@ -665,11 +671,22 @@ function _cardType(card) {
 }
 
 function _importFastaEntries(entries) {
-  entries.forEach(entry => {
-    addSequenceCard('protein');
-    // addSequenceCard appends the new card last
-    const cards = document.querySelectorAll('#sequences-container .seq-card');
-    const card  = cards[cards.length - 1];
+  entries.forEach((entry, idx) => {
+    let card = null;
+
+    // For the first entry, reuse the last card if it's still empty
+    if (idx === 0) {
+      const cards = document.querySelectorAll('#sequences-container .seq-card');
+      const last  = cards[cards.length - 1];
+      const lastTa = last?.querySelector('.seq-textarea');
+      if (last && lastTa && !lastTa.value.trim()) card = last;
+    }
+
+    if (!card) {
+      addSequenceCard('protein');
+      const cards = document.querySelectorAll('#sequences-container .seq-card');
+      card = cards[cards.length - 1];
+    }
     if (!card) return;
 
     const ta = card.querySelector('.seq-textarea');
@@ -2045,9 +2062,7 @@ export function updateViz() {
 function _readChainsFromDOM() {
   const chains = [];
   document.querySelectorAll('.seq-card').forEach((card, cardIdx) => {
-    const type     = card.querySelector('.seq-type-label')?.textContent.toLowerCase();
-    if (type === 'ligand') return; // skip ligands in arc diagram
-
+    const type     = card.querySelector('.seq-type-label')?.textContent.toLowerCase() || 'protein';
     const chainRaw  = card.querySelector('.seq-chain-id')?.value.trim() || '';
     const colorIdx  = parseInt(card.dataset.colorIdx) || cardIdx;
     const seqTA     = card.querySelector('.seq-textarea');
@@ -2058,7 +2073,7 @@ function _readChainsFromDOM() {
       : chainRaw ? [chainRaw] : [];
 
     ids.forEach(id => {
-      chains.push({ id, label: id, length: seqLen || null, colorIdx });
+      chains.push({ id, label: id, length: seqLen || null, colorIdx, type });
     });
   });
   return chains;

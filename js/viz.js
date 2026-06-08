@@ -73,22 +73,14 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
 
   // ── Chain bars ───────────────────────────────────────────────────────────
   chains.forEach((chain, rowIdx) => {
-    const y        = MARGIN_TOP + rowIdx * ROW_STRIDE;
-    const color    = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
-    const fillW    = chainBarW[chain.id];
+    const y     = MARGIN_TOP + rowIdx * ROW_STRIDE;
+    const color = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
+    const fillW = chainBarW[chain.id];
 
-    // Bar — proportional width, no grey ghost track
-    const bar = _el('rect');
-    bar.setAttribute('x',      MARGIN_LEFT);
-    bar.setAttribute('y',      y);
-    bar.setAttribute('width',  fillW);
-    bar.setAttribute('height', BAR_HEIGHT);
-    bar.setAttribute('rx',     BAR_HEIGHT / 2);
-    bar.setAttribute('fill',   color);
-    bar.setAttribute('opacity', '0.85');
-    svg.appendChild(bar);
+    _drawChainShape(svg, chain.type, MARGIN_LEFT, y, fillW, BAR_HEIGHT, color);
 
-    // Chain label
+    // Chain label with type prefix
+    const TYPE_PREFIX = { rna: '~ ', dna: '= ', ligand: '⬡ ' };
     const label = _el('text');
     label.setAttribute('x',           MARGIN_LEFT - 8);
     label.setAttribute('y',           y + BAR_HEIGHT / 2 + 4);
@@ -97,7 +89,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     label.setAttribute('font-family', 'monospace');
     label.setAttribute('font-weight', '700');
     label.setAttribute('fill',        color);
-    label.textContent = chain.label || chain.id;
+    label.textContent = (TYPE_PREFIX[chain.type] || '') + (chain.label || chain.id);
     svg.appendChild(label);
 
     // Length hint
@@ -108,7 +100,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
       hint.setAttribute('text-anchor', 'start');
       hint.setAttribute('font-size',   '10');
       hint.setAttribute('fill',        '#9aa0a6');
-      hint.textContent = chain.length + ' aa';
+      hint.textContent = chain.type === 'ligand' ? 'ligand' : chain.length + ' aa';
       svg.appendChild(hint);
     }
   });
@@ -196,6 +188,59 @@ function _drawArc(svg, pair, chainRow, chains, chainBarW, maxLen, color, label, 
   group.appendChild(hit);
 
   svg.appendChild(group);
+}
+
+function _drawChainShape(svg, type, x, y, w, h, color) {
+  if (type === 'dna') {
+    // Two thin parallel bars → double-stranded
+    const th = h * 0.32;
+    [y + h * 0.08, y + h * 0.60].forEach(ty => {
+      const r = _el('rect');
+      r.setAttribute('x', x);       r.setAttribute('y', ty);
+      r.setAttribute('width', w);   r.setAttribute('height', th);
+      r.setAttribute('rx', th / 2); r.setAttribute('fill', color);
+      r.setAttribute('opacity', '0.85');
+      svg.appendChild(r);
+    });
+  } else if (type === 'rna') {
+    // Wavy sinusoidal path → single-stranded RNA
+    const yMid = y + h / 2;
+    const amp  = h * 0.38;
+    const n    = Math.max(3, Math.round(w / 18));
+    const dx   = w / n;
+    let d = `M ${x} ${yMid}`;
+    for (let i = 0; i < n; i++) {
+      const xi  = x + i * dx;
+      const dir = i % 2 === 0 ? -1 : 1;
+      d += ` C ${xi + dx * 0.3} ${yMid + dir * amp}, ${xi + dx * 0.7} ${yMid + dir * amp}, ${xi + dx} ${yMid}`;
+    }
+    const path = _el('path');
+    path.setAttribute('d', d); path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', color); path.setAttribute('stroke-width', '2.5');
+    path.setAttribute('opacity', '0.85');
+    svg.appendChild(path);
+  } else if (type === 'ligand') {
+    // Hexagon node — fixed size, centered
+    const r  = h * 0.72;
+    const cx = x + Math.min(w, r * 2);
+    const cy = y + h / 2;
+    const pts = Array.from({ length: 6 }, (_, i) => {
+      const a = (Math.PI / 3) * i - Math.PI / 6;
+      return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
+    }).join(' ');
+    const hex = _el('polygon');
+    hex.setAttribute('points', pts); hex.setAttribute('fill', color);
+    hex.setAttribute('opacity', '0.85');
+    svg.appendChild(hex);
+  } else {
+    // Protein: solid rounded rect (default)
+    const bar = _el('rect');
+    bar.setAttribute('x', x);    bar.setAttribute('y', y);
+    bar.setAttribute('width', w); bar.setAttribute('height', h);
+    bar.setAttribute('rx', h / 2); bar.setAttribute('fill', color);
+    bar.setAttribute('opacity', '0.85');
+    svg.appendChild(bar);
+  }
 }
 
 function _posX(resNum, chainLen, barWidth) {
