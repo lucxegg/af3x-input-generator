@@ -826,7 +826,7 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   min-height: 100px;
 }
 
-#arc-svg { display: block; width: 100%; overflow: hidden; }
+#arc-svg { display: block; width: 100%; overflow: visible; }
 
 /* Expand button */
 .topo-expand-btn { font-size: 12px; padding: 2px 8px; }

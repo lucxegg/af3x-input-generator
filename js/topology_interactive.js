@@ -14,7 +14,7 @@ import { CHAIN_COLORS, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 
 const NS   = 'http://www.w3.org/2000/svg';
 const ML   = 94;   // left margin  (room for chain labels)
-const MR   = 36;   // right margin
+const MR   = 62;   // right margin — wide enough for "1234 aa" hint text
 const MT   = 80;   // top margin   (room for intra arcs above row 0)
 const MB   = 40;   // bottom margin
 const BAR_H      = 22;
@@ -245,25 +245,12 @@ function _drawChainShape(svg, type, x, y, w, h, color, chainId) {
                   class: 'topo-chain-bar', 'data-chainid': chainId || '' });
     svg.appendChild(hex);
   } else {
-    // Protein: ribbon with arrowhead — classic cartoon representation
-    const aw  = Math.min(w * 0.18, h * 1.1);
-    const t   = h * 0.28;
-    const cy  = y + h / 2;
-    const x2  = x + w;
-    const xas = x2 - aw;
-    const pts = [
-      `${x},${cy - t}`,
-      `${xas},${cy - t}`,
-      `${xas},${cy - t - h * 0.18}`,
-      `${x2},${cy}`,
-      `${xas},${cy + t + h * 0.18}`,
-      `${xas},${cy + t}`,
-      `${x},${cy + t}`,
-    ].join(' ');
-    const ribbon = _el('polygon');
-    _attrs(ribbon, { points: pts, fill: color, opacity: 0.88,
-                     class: 'topo-chain-bar', 'data-chainid': chainId || '' });
-    svg.appendChild(ribbon);
+    // Protein: solid rounded rect
+    const bar = _el('rect');
+    _attrs(bar, { x, y, width: w, height: h, rx: h / 2,
+                  fill: color, opacity: 0.88,
+                  class: 'topo-chain-bar', 'data-chainid': chainId || '' });
+    svg.appendChild(bar);
   }
 }
 

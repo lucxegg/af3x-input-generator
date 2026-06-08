@@ -3,7 +3,7 @@
 import { CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
 
 const MARGIN_LEFT   = 76;
-const MARGIN_RIGHT  = 24;
+const MARGIN_RIGHT  = 58;  // wide enough for "1234 aa" hint text
 const MARGIN_TOP    = 68;  // tall enough to fit intra-chain arcs above row 0
 const BAR_HEIGHT    = 18;
 const ROW_STRIDE    = 74;  // centre-to-centre vertical distance between bars
@@ -257,27 +257,13 @@ function _drawChainShape(svg, type, x, y, w, h, color) {
     hex.setAttribute('opacity', '0.85');
     svg.appendChild(hex);
   } else {
-    // Protein: ribbon with arrowhead — classic cartoon representation
-    const aw  = Math.min(w * 0.18, h * 1.1);  // arrowhead width along x
-    const t   = h * 0.28;                       // half-thickness of ribbon body
-    const cy  = y + h / 2;
-    const x2  = x + w;                          // right tip
-    const xas = x2 - aw;                        // where arrowhead starts
-
-    const pts = [
-      `${x},${cy - t}`,
-      `${xas},${cy - t}`,
-      `${xas},${cy - t - h * 0.18}`,   // flare top
-      `${x2},${cy}`,                    // tip
-      `${xas},${cy + t + h * 0.18}`,   // flare bottom
-      `${xas},${cy + t}`,
-      `${x},${cy + t}`,
-    ].join(' ');
-    const ribbon = _el('polygon');
-    ribbon.setAttribute('points',  pts);
-    ribbon.setAttribute('fill',    color);
-    ribbon.setAttribute('opacity', '0.85');
-    svg.appendChild(ribbon);
+    // Protein: solid rounded rect
+    const bar = _el('rect');
+    bar.setAttribute('x', x);     bar.setAttribute('y', y);
+    bar.setAttribute('width', w); bar.setAttribute('height', h);
+    bar.setAttribute('rx', h / 2); bar.setAttribute('fill', color);
+    bar.setAttribute('opacity', '0.85');
+    svg.appendChild(bar);
   }
 }
 
