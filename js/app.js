@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _initJsonImport();
   initImportModal();
   initPdbModal();
-  initInteractiveTopology();
+  try { initInteractiveTopology(); } catch (e) { console.warn('topology init:', e); }
 
   // Add-entity buttons
   document.querySelectorAll('.btn-add-entity').forEach(btn => {

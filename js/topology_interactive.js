@@ -55,19 +55,19 @@ export function openInteractiveTopology(chains, xlGroups, ssBonds) {
 
 export function initInteractiveTopology() {
   const modal = document.getElementById('topology-modal');
-  if (!modal) return;
+  const svg   = _svg();
+  if (!modal || !svg) return;
 
-  document.getElementById('topoModalClose').addEventListener('click', _close);
-  document.getElementById('topoResetView').addEventListener('click', () => {
+  document.getElementById('topoModalClose')?.addEventListener('click', _close);
+  document.getElementById('topoResetView')?.addEventListener('click', () => {
     _resetChainPositions();
     _resetVb();
     _draw();
   });
 
   modal.addEventListener('keydown', e => { if (e.key === 'Escape') _close(); });
-  modal.addEventListener('click', e => { if (e.target === modal) _close(); });
+  modal.addEventListener('click',   e => { if (e.target === modal)  _close(); });
 
-  const svg = _svg();
   svg.addEventListener('wheel',     _onWheel,     { passive: false });
   svg.addEventListener('mousedown', _onMouseDown);
   window.addEventListener('mousemove', _onMouseMove);
