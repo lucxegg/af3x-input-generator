@@ -467,12 +467,16 @@ function _wireSeqInputTabs(card, type, id) {
       seqTA.focus();
     });
 
-    // Tooltip for XL-highlighted residues
+    // Tooltip for XL- and PTM-highlighted residues
     const tooltip = document.getElementById('arc-tooltip');
     display.addEventListener('mouseover', e => {
-      const hl = e.target.closest('.xl-hl');
-      if (hl && tooltip && hl.dataset.xlInfo) {
-        tooltip.textContent = hl.dataset.xlInfo;
+      const xlHl  = e.target.closest('.xl-hl');
+      const modHl = e.target.closest('.mod-valid, .mod-selected');
+      if (xlHl && tooltip && xlHl.dataset.xlInfo) {
+        tooltip.textContent = xlHl.dataset.xlInfo;
+        tooltip.style.display = 'block';
+      } else if (modHl && tooltip && modHl.dataset.modInfo) {
+        tooltip.textContent = modHl.dataset.modInfo;
         tooltip.style.display = 'block';
       }
     });
@@ -889,11 +893,11 @@ function _formatSeqHTML(raw, lineLen, xlHighlights, modHighlights) {
           const info = hlInfo.info.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
           groupHtml += `<span class="seq-res xl-hl" data-pos="${absPos}" data-xl-info="${info}" style="--hl-color:${hlInfo.color}">${aa}</span>`;
         } else if (modInfo) {
-          const cls   = modInfo.type === 'selected' ? 'mod-selected' : 'mod-valid';
-          const title = modInfo.type === 'selected'
-            ? `${modInfo.ccd} @ ${absPos}`
-            : `Valid for ${modInfo.ccd} (${modInfo.targetAA})`;
-          groupHtml += `<span class="seq-res ${cls}" data-pos="${absPos}" title="${title}">${aa}</span>`;
+          const cls  = modInfo.type === 'selected' ? 'mod-selected' : 'mod-valid';
+          const info = modInfo.type === 'selected'
+            ? `${modInfo.name} (${modInfo.ccd}) @ ${absPos}`
+            : `${modInfo.name} (${modInfo.ccd}) — ${modInfo.targetAA} @ ${absPos}`;
+          groupHtml += `<span class="seq-res ${cls}" data-pos="${absPos}" data-mod-info="${info}" style="--mod-color:${modInfo.color}">${aa}</span>`;
         } else {
           groupHtml += `<span class="seq-res" data-pos="${absPos}">${aa}</span>`;
         }
@@ -1503,32 +1507,49 @@ function _validateModRow(ccdRaw, posRaw, seqId, warnEl) {
   warnEl.style.display = 'none';
 }
 
+function _buildPTMColorMap(seqId) {
+  const map  = new Map();
+  let   idx  = 0;
+  document.querySelector(`.seq-card[data-id="${seqId}"]`)
+    ?.querySelectorAll('.mod-row .mod-ccd').forEach(el => {
+      const ccd = el.value.trim().toUpperCase();
+      if (ccd && !map.has(ccd)) {
+        map.set(ccd, XL_GROUP_COLORS[idx % XL_GROUP_COLORS.length]);
+        idx++;
+      }
+    });
+  return map;
+}
+
 function _buildModHighlights(seqId) {
-  const hl   = new Map(); // pos → { type: 'valid'|'selected', ccd, targetAA }
-  const card = document.querySelector(`.seq-card[data-id="${seqId}"]`);
-  const seq  = card?.querySelector('.seq-textarea')?.value.trim().replace(/\s/g,'').toUpperCase() || '';
+  const hl        = new Map(); // pos → { type, ccd, targetAA, color, name }
+  const card      = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const seq       = card?.querySelector('.seq-textarea')?.value.trim().replace(/\s/g,'').toUpperCase() || '';
   if (!seq) return hl;
 
-  const inPickMode  = _modPickState?.seqId === seqId;
-  const pickRow     = inPickMode ? _modPickState.row : null;
+  const inPickMode = _modPickState?.seqId === seqId;
+  const pickRow    = inPickMode ? _modPickState.row : null;
+  const colorMap   = _buildPTMColorMap(seqId);
 
   card.querySelectorAll('.mod-row').forEach(row => {
-    const ccd = (row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
-    const pos = parseInt(row.querySelector('.mod-pos')?.value) || 0;
+    const ccd   = (row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
+    const pos   = parseInt(row.querySelector('.mod-pos')?.value) || 0;
     if (!ccd) return;
-    const ptm = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
+    const ptm   = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
+    const color = colorMap.get(ccd) || '#34a853';
+    const name  = ptm ? ptm.name : ccd;
 
-    // In pick mode, highlight valid positions for the active row
+    // In pick mode: highlight all valid positions for the active row
     if (inPickMode && row === pickRow && ptm) {
       for (let i = 0; i < seq.length; i++) {
         if (seq[i] === ptm.targetAA && !hl.has(i + 1)) {
-          hl.set(i + 1, { type: 'valid', ccd, targetAA: ptm.targetAA });
+          hl.set(i + 1, { type: 'valid', ccd, targetAA: ptm.targetAA, color, name });
         }
       }
     }
-    // Always mark the already-selected position
+    // Always mark the placed position
     if (pos && pos <= seq.length) {
-      hl.set(pos, { type: 'selected', ccd, targetAA: ptm?.targetAA || '?' });
+      hl.set(pos, { type: 'selected', ccd, targetAA: ptm?.targetAA || '?', color, name });
     }
   });
   return hl;

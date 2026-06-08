@@ -45,7 +45,8 @@ export function openInteractiveTopology(chains, xlGroups, ssBonds) {
   _chains   = chains;
   _xlGroups = xlGroups || [];
   _ssBonds  = ssBonds  || [];
-  _maxLen   = Math.max(1, ...chains.map(c => c.length || 1));
+  const seqLens = chains.filter(c => c.type !== 'ligand' && c.length).map(c => c.length);
+  _maxLen = seqLens.length ? Math.max(...seqLens) : 1;
 
   _resetChainPositions();
   document.getElementById('topology-modal').style.display = 'flex';
@@ -111,11 +112,14 @@ function _draw() {
   const pxPerRes = (barW / _maxLen) * (displayW / _vb.w);
   const tickInt  = _tickInterval(pxPerRes);
 
-  // Per-chain bar widths — proportional to actual sequence length
+  // Per-chain bar widths — proportional to sequence length; ligands get fixed node width
   const chainW = {};
   _chains.forEach(chain => {
-    const len = chain.length || _maxLen;
-    chainW[chain.id] = Math.max(4, (len / _maxLen) * barW);
+    if (chain.type === 'ligand') {
+      chainW[chain.id] = BAR_H * 2.4; // fixed small node for ligands
+    } else {
+      chainW[chain.id] = Math.max(4, ((chain.length || _maxLen) / _maxLen) * barW);
+    }
   });
 
   // Crosslink arcs — drawn before bars so bars appear on top
@@ -131,11 +135,11 @@ function _draw() {
   _chains.forEach(chain => {
     const y     = _chainY[chain.id];
     const color = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
-    const len   = chain.length || _maxLen;
+    const len   = chain.length || null;  // null = unknown length
     const cw    = chainW[chain.id];
 
-    // Residue tick marks
-    if (tickInt) {
+    // Residue tick marks — only when sequence length is known
+    if (tickInt && len) {
       const g = _el('g');
       g.setAttribute('class', 'topo-ticks');
       for (let r = tickInt; r <= len; r += tickInt) {
