@@ -720,6 +720,7 @@ function _importFastaEntries(entries) {
       _updateRuler(card);
     }
   });
+  updateViz();
 }
 
 function _initGlobalFastaImport() {
@@ -2775,10 +2776,19 @@ function _handlePdbFile(e) {
 }
 
 function _onPdbImport(chains) {
-  // Assign chain IDs A, B, C... starting after the last existing card
+  // Find the initial empty card (if any) to reuse for the first chain
+  const allCards  = document.querySelectorAll('#sequences-container .seq-card');
+  const lastCard  = allCards[allCards.length - 1];
+  const lastTa    = lastCard?.querySelector('.seq-textarea');
+  const emptyCard = (lastCard && lastTa && !lastTa.value.trim()) ? lastCard : null;
+
+  // Collect existing IDs, but exclude the empty card's ID so it can be reassigned
+  const emptyCardId = emptyCard?.querySelector('.seq-chain-id')?.value.trim() || null;
   const existingIds = new Set();
   document.querySelectorAll('.seq-chain-id').forEach(el => {
-    (el.value || '').split(',').map(s => s.trim()).filter(Boolean).forEach(id => existingIds.add(id));
+    (el.value || '').split(',').map(s => s.trim()).filter(Boolean).forEach(id => {
+      if (id !== emptyCardId) existingIds.add(id);
+    });
   });
 
   let nextCharCode = 65; // 'A'
@@ -2790,14 +2800,19 @@ function _onPdbImport(chains) {
     return id;
   }
 
-  chains.forEach(chain => {
+  chains.forEach((chain, idx) => {
     const type = chain.type === 'dna' ? 'dna'
                : chain.type === 'rna' ? 'rna'
                : chain.type === 'ligand' ? 'ligand'
                : 'protein';
 
-    addSequenceCard(type);
-    const card = document.querySelector('#sequences-container .seq-card:last-child');
+    let card;
+    if (idx === 0 && emptyCard) {
+      card = emptyCard; // reuse the initial empty card
+    } else {
+      addSequenceCard(type);
+      card = document.querySelector('#sequences-container .seq-card:last-child');
+    }
     if (!card) return;
 
     const chainIdInput = card.querySelector('.seq-chain-id');
