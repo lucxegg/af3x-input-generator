@@ -27,6 +27,9 @@ let _xlPickMode  = false; // true when "Select XL residues" button is active
 let _xlPickState = null;  // null | { chainId, pos, spanEl }
 let _xlPendingPair = null; // null | { c1, p1, c2, p2 } — waiting for popup confirmation
 
+// Modification residue pick state
+let _modPickState = null; // null | { seqId, row, targetAA }
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -96,6 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // XL pick: ESC cancels everything, banner cancel button
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      if (_modPickState)   { _exitModPickMode(); return; }
       if (_xlPendingPair) { _closePendingPair(); return; }
       if (_xlPickState)   { _clearPickState(); return; }
       if (_xlPickMode)    { _toggleXlPickMode(); }
@@ -430,6 +434,22 @@ function _wireSeqInputTabs(card, type, id) {
   if (display && seqTA) {
     display.addEventListener('click', e => {
       const resSpan = e.target.closest('.seq-res');
+
+      // Mod residue pick mode: clicking a residue fills the position input
+      if (resSpan && _modPickState?.seqId === id) {
+        e.stopPropagation();
+        const pos = parseInt(resSpan.dataset.pos);
+        if (pos) {
+          const posEl = _modPickState.row.querySelector('.mod-pos');
+          const warnEl = _modPickState.row.querySelector('.mod-pos-warn');
+          const ccd = (_modPickState.row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
+          if (posEl) posEl.value = pos;
+          _validateModRow(ccd, pos, id, warnEl);
+          _exitModPickMode();
+        }
+        return;
+      }
+
       if (resSpan && (_xlPickMode || _xlPickState)) {
         e.stopPropagation();
         const pos      = parseInt(resSpan.dataset.pos);
@@ -843,12 +863,14 @@ function _calcSeqLineLen(container) {
 }
 
 // Format sequence as grouped, numbered display.
-// xlHighlights: Map<pos (1-based) → { color: string, info: string }>
-function _formatSeqHTML(raw, lineLen, xlHighlights) {
+// xlHighlights: Map<pos → { color, info }>
+// modHighlights: Map<pos → { type: 'valid'|'selected', ccd, targetAA }>
+function _formatSeqHTML(raw, lineLen, xlHighlights, modHighlights) {
   const seq = raw.replace(/[^A-Za-z]/g, '').toUpperCase();
   if (!seq) return '';
   lineLen = lineLen || 60;
-  const hl = xlHighlights || new Map();
+  const hl    = xlHighlights  || new Map();
+  const modHL = modHighlights || new Map();
 
   const rows = [];
   for (let i = 0; i < seq.length; i += lineLen) {
@@ -862,9 +884,16 @@ function _formatSeqHTML(raw, lineLen, xlHighlights) {
         const absPos = i + j + k + 1;
         const aa     = chunk[j + k];
         const hlInfo = hl.get(absPos);
+        const modInfo = modHL.get(absPos);
         if (hlInfo) {
           const info = hlInfo.info.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
           groupHtml += `<span class="seq-res xl-hl" data-pos="${absPos}" data-xl-info="${info}" style="--hl-color:${hlInfo.color}">${aa}</span>`;
+        } else if (modInfo) {
+          const cls   = modInfo.type === 'selected' ? 'mod-selected' : 'mod-valid';
+          const title = modInfo.type === 'selected'
+            ? `${modInfo.ccd} @ ${absPos}`
+            : `Valid for ${modInfo.ccd} (${modInfo.targetAA})`;
+          groupHtml += `<span class="seq-res ${cls}" data-pos="${absPos}" title="${title}">${aa}</span>`;
         } else {
           groupHtml += `<span class="seq-res" data-pos="${absPos}">${aa}</span>`;
         }
@@ -937,8 +966,9 @@ function _updateRuler(card) {
       const chainId  = chainIds[0] || '';
       display.dataset.chainId = chainIds.join(',');
 
-      const xlHL = chainId ? _buildXlHighlights(chainId) : new Map();
-      display.innerHTML     = _formatSeqHTML(seq, lineLen, xlHL);
+      const xlHL  = chainId ? _buildXlHighlights(chainId) : new Map();
+      const modHL = _buildModHighlights(card.dataset.id);
+      display.innerHTML     = _formatSeqHTML(seq, lineLen, xlHL, modHL);
       display.style.display = 'block';
       seqTA.style.display   = 'none';
 
@@ -1383,13 +1413,23 @@ function _openPTMPicker(seqId, existingModEl) {
 
 function _applyPTM(ptm) {
   if (!_ptmContext) return;
-  const { seqId } = _ptmContext;
+  const { seqId, existingModEl } = _ptmContext;
 
-  const card     = document.querySelector(`.seq-card[data-id="${seqId}"]`);
-  const modsEl   = card?.querySelector(`.mods-container[data-seqid="${seqId}"]`);
+  const card   = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const modsEl = card?.querySelector(`.mods-container[data-seqid="${seqId}"]`);
   if (!modsEl) return;
 
-  _addModRow(modsEl, seqId, ptm.ccd, null);
+  if (existingModEl?.classList.contains('mod-row')) {
+    // Update existing row's CCD in place
+    const ccdEl  = existingModEl.querySelector('.mod-ccd');
+    const posEl  = existingModEl.querySelector('.mod-pos');
+    const warnEl = existingModEl.querySelector('.mod-pos-warn');
+    if (ccdEl) ccdEl.value = ptm.ccd;
+    _validateModRow(ptm.ccd, posEl?.value || '', seqId, warnEl);
+    _updateRuler(card);
+  } else {
+    _addModRow(modsEl, seqId, ptm.ccd, null);
+  }
   document.getElementById('ptm-modal').style.display = 'none';
 }
 
@@ -1397,16 +1437,120 @@ function _addModRow(container, seqId, ccdCode = '', position = '') {
   const row = document.createElement('div');
   row.className = 'mod-row';
   row.innerHTML = `
-    <input type="text" class="mod-ccd" value="${ccdCode}" placeholder="CCD code (e.g. SEP)"
-           title="Click to pick from database">
-    <span class="mod-sep">@</span>
-    <input type="number" class="mod-pos" value="${position}" placeholder="Position (1-based)" min="1">
-    <button class="btn-icon mod-pick-btn" title="Pick from database">⋯</button>
-    <button class="btn-icon btn-remove-pair" title="Remove">✕</button>`;
+    <div class="mod-row-main">
+      <input type="text" class="mod-ccd" value="${ccdCode}" placeholder="CCD code (e.g. SEP)"
+             title="Click ⋯ to pick from database">
+      <span class="mod-sep">@</span>
+      <input type="number" class="mod-pos" value="${position}" placeholder="pos" min="1">
+      <button class="btn-icon mod-res-pick-btn" title="Click a residue in the sequence to set position">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+          <line x1="8" y1="1" x2="8" y2="4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="8" y1="12" x2="8" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="1" y1="8" x2="4" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <line x1="12" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button class="btn-icon mod-pick-btn" title="Pick modification from database">⋯</button>
+      <button class="btn-icon btn-remove-pair" title="Remove">✕</button>
+    </div>
+    <div class="mod-pos-warn" style="display:none"></div>`;
 
-  row.querySelector('.btn-remove-pair').addEventListener('click', () => row.remove());
+  const ccdEl   = row.querySelector('.mod-ccd');
+  const posEl   = row.querySelector('.mod-pos');
+  const warnEl  = row.querySelector('.mod-pos-warn');
+
+  const revalidate = () => {
+    _validateModRow(ccdEl.value, posEl.value, seqId, warnEl);
+    _updateRuler(document.querySelector(`.seq-card[data-id="${seqId}"]`));
+  };
+
+  ccdEl.addEventListener('change', revalidate);
+  posEl.addEventListener('input',  () => _validateModRow(ccdEl.value, posEl.value, seqId, warnEl));
+  posEl.addEventListener('change', revalidate);
+
+  row.querySelector('.btn-remove-pair').addEventListener('click', () => {
+    if (_modPickState?.row === row) _exitModPickMode();
+    row.remove();
+    _updateRuler(document.querySelector(`.seq-card[data-id="${seqId}"]`));
+  });
   row.querySelector('.mod-pick-btn').addEventListener('click', () => _openPTMPicker(seqId, row));
+  row.querySelector('.mod-res-pick-btn').addEventListener('click', () => _toggleModResiduePickMode(seqId, row));
+
   container.appendChild(row);
+  if (ccdCode && position) _validateModRow(ccdCode, position, seqId, warnEl);
+}
+
+function _validateModRow(ccdRaw, posRaw, seqId, warnEl) {
+  if (!warnEl) return;
+  const ccd = (ccdRaw || '').trim().toUpperCase();
+  const pos = parseInt(posRaw) || 0;
+  if (!ccd || !pos) { warnEl.style.display = 'none'; return; }
+
+  const card = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const seq  = card?.querySelector('.seq-textarea')?.value.trim().replace(/\s/g,'').toUpperCase() || '';
+  if (!seq) { warnEl.style.display = 'none'; return; }
+
+  if (pos > seq.length) {
+    warnEl.textContent = `Position ${pos} out of range (chain length: ${seq.length})`;
+    warnEl.style.display = 'block'; return;
+  }
+  const ptm = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
+  if (ptm && seq[pos - 1] !== ptm.targetAA) {
+    warnEl.textContent = `${ccd} requires ${ptm.targetAA}, but position ${pos} is ${seq[pos - 1]}`;
+    warnEl.style.display = 'block'; return;
+  }
+  warnEl.style.display = 'none';
+}
+
+function _buildModHighlights(seqId) {
+  const hl   = new Map(); // pos → { type: 'valid'|'selected', ccd, targetAA }
+  const card = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const seq  = card?.querySelector('.seq-textarea')?.value.trim().replace(/\s/g,'').toUpperCase() || '';
+  if (!seq) return hl;
+
+  const inPickMode  = _modPickState?.seqId === seqId;
+  const pickRow     = inPickMode ? _modPickState.row : null;
+
+  card.querySelectorAll('.mod-row').forEach(row => {
+    const ccd = (row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
+    const pos = parseInt(row.querySelector('.mod-pos')?.value) || 0;
+    if (!ccd) return;
+    const ptm = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
+
+    // In pick mode, highlight valid positions for the active row
+    if (inPickMode && row === pickRow && ptm) {
+      for (let i = 0; i < seq.length; i++) {
+        if (seq[i] === ptm.targetAA && !hl.has(i + 1)) {
+          hl.set(i + 1, { type: 'valid', ccd, targetAA: ptm.targetAA });
+        }
+      }
+    }
+    // Always mark the already-selected position
+    if (pos && pos <= seq.length) {
+      hl.set(pos, { type: 'selected', ccd, targetAA: ptm?.targetAA || '?' });
+    }
+  });
+  return hl;
+}
+
+function _toggleModResiduePickMode(seqId, row) {
+  if (_modPickState?.row === row) { _exitModPickMode(); return; }
+  _exitModPickMode();
+  const ccd = (row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
+  const ptm = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
+  _modPickState = { seqId, row, targetAA: ptm?.targetAA || null };
+  row.querySelector('.mod-res-pick-btn')?.classList.add('mod-pick-active');
+  const card = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  if (card) _updateRuler(card);
+}
+
+function _exitModPickMode() {
+  if (!_modPickState) return;
+  _modPickState.row.querySelector('.mod-res-pick-btn')?.classList.remove('mod-pick-active');
+  const card = document.querySelector(`.seq-card[data-id="${_modPickState.seqId}"]`);
+  _modPickState = null;
+  if (card) _updateRuler(card);
 }
 
 // ─── Crosslinker Presets ──────────────────────────────────────────────────────
