@@ -661,7 +661,15 @@ async function _fetchAllSequences(container, proteins) {
   if (btn) btn.disabled = true;
   if (allStatus) { allStatus.textContent = 'Fetching…'; allStatus.style.color = ''; }
 
-  const uniProtProteins = proteins.filter(p => _extractUniprotAcc(p) !== null);
+  // Only fetch for proteins whose checkbox is currently checked
+  const selectedProts = new Set();
+  container.querySelectorAll('.mapping-protein-cb:checked').forEach(cb => {
+    selectedProts.add(cb.dataset.protein);
+  });
+
+  const uniProtProteins = proteins.filter(p =>
+    _extractUniprotAcc(p) !== null && selectedProts.has(p)
+  );
 
   await Promise.all(uniProtProteins.map(async prot => {
     const acc      = _extractUniprotAcc(prot);
@@ -681,10 +689,10 @@ async function _fetchAllSequences(container, proteins) {
     }
   }));
 
-  const nFetched = Object.keys(_fetchedSequences).length;
+  const nOk = uniProtProteins.filter(p => _fetchedSequences[p]).length;
   if (allStatus) {
-    allStatus.textContent = `${nFetched} / ${uniProtProteins.length} fetched`;
-    allStatus.style.color = nFetched === uniProtProteins.length ? '#34a853' : '#fa7b17';
+    allStatus.textContent = `${nOk} / ${uniProtProteins.length} fetched`;
+    allStatus.style.color = nOk === uniProtProteins.length ? '#34a853' : '#fa7b17';
   }
   if (btn) btn.disabled = false;
 }
