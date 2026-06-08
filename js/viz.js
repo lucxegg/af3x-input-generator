@@ -80,7 +80,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     _drawChainShape(svg, chain.type, MARGIN_LEFT, y, fillW, BAR_HEIGHT, color);
 
     // Chain label with type prefix
-    const TYPE_PREFIX = { rna: '― ', dna: '═ ', ligand: '⬡ ' };
+    const TYPE_PREFIX = { protein: '▶ ', rna: '― ', dna: '═ ', ligand: '⬡ ' };
     const label = _el('text');
     label.setAttribute('x',           MARGIN_LEFT - 8);
     label.setAttribute('y',           y + BAR_HEIGHT / 2 + 4);
@@ -257,13 +257,27 @@ function _drawChainShape(svg, type, x, y, w, h, color) {
     hex.setAttribute('opacity', '0.85');
     svg.appendChild(hex);
   } else {
-    // Protein: solid rounded rect (default)
-    const bar = _el('rect');
-    bar.setAttribute('x', x);    bar.setAttribute('y', y);
-    bar.setAttribute('width', w); bar.setAttribute('height', h);
-    bar.setAttribute('rx', h / 2); bar.setAttribute('fill', color);
-    bar.setAttribute('opacity', '0.85');
-    svg.appendChild(bar);
+    // Protein: ribbon with arrowhead — classic cartoon representation
+    const aw  = Math.min(w * 0.18, h * 1.1);  // arrowhead width along x
+    const t   = h * 0.28;                       // half-thickness of ribbon body
+    const cy  = y + h / 2;
+    const x2  = x + w;                          // right tip
+    const xas = x2 - aw;                        // where arrowhead starts
+
+    const pts = [
+      `${x},${cy - t}`,
+      `${xas},${cy - t}`,
+      `${xas},${cy - t - h * 0.18}`,   // flare top
+      `${x2},${cy}`,                    // tip
+      `${xas},${cy + t + h * 0.18}`,   // flare bottom
+      `${xas},${cy + t}`,
+      `${x},${cy + t}`,
+    ].join(' ');
+    const ribbon = _el('polygon');
+    ribbon.setAttribute('points',  pts);
+    ribbon.setAttribute('fill',    color);
+    ribbon.setAttribute('opacity', '0.85');
+    svg.appendChild(ribbon);
   }
 }
 
