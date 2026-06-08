@@ -1611,12 +1611,20 @@ function _updateBatchInfo() {
   }
 }
 
-// ─── Arc click ↔ pair row highlight ──────────────────────────────────────────
+// ─── Arc click ↔ pair row highlight + zoom ───────────────────────────────────
+
+let _zoomRaf = null;
 
 function _rewireArcEvents(svg) {
-  svg.querySelectorAll('.xl-arc').forEach(arc => {
-    arc.addEventListener('click', () => {
-      const [c1, p1, c2, p2] = arc.getAttribute('data-key').split(':');
+  const tooltip = document.getElementById('arc-tooltip');
+
+  svg.querySelectorAll('.xl-arc-group').forEach(group => {
+    const key   = group.getAttribute('data-key');
+    const label = group.getAttribute('data-label');
+
+    // Click → flash matching pair row
+    group.addEventListener('click', () => {
+      const [c1, p1, c2, p2] = key.split(':');
       let found = null;
       document.querySelectorAll('.xl-pair-row').forEach(row => {
         if (row.querySelector('.xl-chain-a')?.value.trim() === c1 &&
@@ -1629,12 +1637,88 @@ function _rewireArcEvents(svg) {
       if (found) {
         found.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         found.classList.remove('xl-row-flash');
-        // Force reflow so animation restarts
         void found.offsetWidth;
         found.classList.add('xl-row-flash');
       }
     });
+
+    // Hover → zoom into group bbox + show tooltip
+    group.addEventListener('mouseenter', () => {
+      if (tooltip) { tooltip.textContent = label; tooltip.style.display = 'block'; }
+      _zoomToGroup(svg, group);
+    });
+
+    group.addEventListener('mousemove', e => {
+      if (tooltip) {
+        tooltip.style.left = (e.clientX + 16) + 'px';
+        tooltip.style.top  = (e.clientY - 32) + 'px';
+      }
+    });
+
+    group.addEventListener('mouseleave', () => {
+      if (tooltip) tooltip.style.display = 'none';
+      _restoreViewBox(svg);
+    });
   });
+}
+
+function _zoomToGroup(svg, group) {
+  const fullVb = svg.dataset.fullVb;
+  if (!fullVb) return;
+  const [, , vw, vh] = fullVb.split(' ').map(Number);
+
+  let bbox;
+  try { bbox = group.getBBox(); } catch { return; }
+
+  const PAD = 90;
+  let tx = bbox.x - PAD;
+  let ty = bbox.y - PAD;
+  let tw = bbox.width  + PAD * 2;
+  let th = bbox.height + PAD * 2;
+
+  // Clamp to SVG bounds
+  if (tx < 0)          { tw += tx;     tx = 0; }
+  if (ty < 0)          { th += ty;     ty = 0; }
+  if (tx + tw > vw)    { tw = vw - tx;        }
+  if (ty + th > vh)    { th = vh - ty;        }
+
+  // Skip zoom if area is already ≥ 80% of the diagram
+  if (tw / vw > 0.80 && th / vh > 0.80) return;
+
+  _smoothViewBox(svg, [tx, ty, tw, th], 220);
+}
+
+function _restoreViewBox(svg) {
+  const fullVb = svg.dataset.fullVb;
+  if (!fullVb) return;
+  _smoothViewBox(svg, fullVb.split(' ').map(Number), 200);
+}
+
+function _smoothViewBox(svg, target, durationMs) {
+  const vb    = svg.viewBox.baseVal;
+  const start = [vb.x, vb.y, vb.width, vb.height];
+  const t0    = performance.now();
+
+  if (_zoomRaf) cancelAnimationFrame(_zoomRaf);
+
+  function step(t) {
+    const raw  = Math.min((t - t0) / durationMs, 1);
+    const ease = raw < 0.5 ? 4 * raw ** 3 : 1 - (-2 * raw + 2) ** 3 / 2;
+
+    const x = start[0] + (target[0] - start[0]) * ease;
+    const y = start[1] + (target[1] - start[1]) * ease;
+    const w = start[2] + (target[2] - start[2]) * ease;
+    const h = start[3] + (target[3] - start[3]) * ease;
+    svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+
+    if (raw < 1) {
+      _zoomRaf = requestAnimationFrame(step);
+    } else {
+      _zoomRaf = null;
+    }
+  }
+
+  _zoomRaf = requestAnimationFrame(step);
 }
 
 export function wireXlPairRowHover(row) {
@@ -1645,15 +1729,13 @@ export function wireXlPairRowHover(row) {
     const p2 = row.querySelector('.xl-pos-b')?.value.trim();
     if (!c1 || !p1 || !c2 || !p2) return;
     const key = `${c1}:${p1}:${c2}:${p2}`;
-    document.querySelectorAll(`.xl-arc[data-key="${CSS.escape(key)}"]`).forEach(arc => {
-      arc.setAttribute('stroke-width', '3.5');
-      arc.setAttribute('opacity', '1');
+    document.querySelectorAll(`.xl-arc-group[data-key="${CSS.escape(key)}"]`).forEach(grp => {
+      grp.classList.add('xl-arc-group-hover');
     });
   });
   row.addEventListener('mouseleave', () => {
-    document.querySelectorAll('.xl-arc').forEach(arc => {
-      arc.setAttribute('stroke-width', '1.8');
-      arc.setAttribute('opacity', '0.8');
+    document.querySelectorAll('.xl-arc-group.xl-arc-group-hover').forEach(grp => {
+      grp.classList.remove('xl-arc-group-hover');
     });
   });
 }

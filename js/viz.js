@@ -2,11 +2,11 @@
 
 import { CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
 
-const MARGIN_LEFT  = 72;  // space for chain labels
-const MARGIN_RIGHT = 20;
-const MARGIN_TOP   = 18;
-const BAR_HEIGHT   = 14;
-const ROW_STRIDE   = 52;  // centre-to-centre vertical distance between bars
+const MARGIN_LEFT  = 76;
+const MARGIN_RIGHT = 24;
+const MARGIN_TOP   = 22;
+const BAR_HEIGHT   = 18;
+const ROW_STRIDE   = 74;  // centre-to-centre vertical distance between bars
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -18,10 +18,9 @@ const NS = 'http://www.w3.org/2000/svg';
  * @param {SVGSVGElement} svg
  * @param {Array}  chains   [{ id, label, length, colorIdx }]
  * @param {Array}  xlGroups [{ name, color, pairs: [{ chain1, pos1, chain2, pos2 }] }]
- * @param {Array}  ssBonds  [{ chain1, pos1, chain2, pos2 }]  (disulfide bonds)
+ * @param {Array}  ssBonds  [{ chain1, pos1, chain2, pos2 }]
  */
 export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
-  // Clear previous content (keep <defs> if any)
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
   if (chains.length === 0) {
@@ -34,22 +33,44 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
   const nRows     = chains.length;
   const svgHeight = MARGIN_TOP * 2 + nRows * ROW_STRIDE;
 
-  svg.setAttribute('height', svgHeight);
+  svg.setAttribute('height',  svgHeight);
+  svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
+  // Store full viewBox for zoom-restore
+  svg.dataset.fullVb = `0 0 ${svgWidth} ${svgHeight}`;
 
-  // Build a lookup: chain id → row index
+  // SVG defs: glow filter
+  const defs   = _el('defs');
+  const filter = _el('filter');
+  filter.setAttribute('id', 'arc-glow');
+  filter.setAttribute('x', '-60%'); filter.setAttribute('y', '-60%');
+  filter.setAttribute('width', '220%'); filter.setAttribute('height', '220%');
+  const blur = _el('feGaussianBlur');
+  blur.setAttribute('in', 'SourceGraphic');
+  blur.setAttribute('stdDeviation', '3');
+  blur.setAttribute('result', 'blurred');
+  const merge  = _el('feMerge');
+  const mNode1 = _el('feMergeNode'); mNode1.setAttribute('in', 'blurred');
+  const mNode2 = _el('feMergeNode'); mNode2.setAttribute('in', 'SourceGraphic');
+  merge.appendChild(mNode1);
+  merge.appendChild(mNode2);
+  filter.appendChild(blur);
+  filter.appendChild(merge);
+  defs.appendChild(filter);
+  svg.appendChild(defs);
+
+  // Chain row → index map
   const chainRow = {};
   chains.forEach((c, i) => { chainRow[c.id] = i; });
 
-  // Maximum sequence length across all chains (for proportional x-positions)
   const maxLen = Math.max(...chains.map(c => c.length || 1));
 
-  // ── Draw chain bars ──────────────────────────────────────────────────────
+  // ── Chain bars ───────────────────────────────────────────────────────────
   chains.forEach((chain, rowIdx) => {
-    const y       = MARGIN_TOP + rowIdx * ROW_STRIDE;
-    const color   = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
+    const y        = MARGIN_TOP + rowIdx * ROW_STRIDE;
+    const color    = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
     const chainLen = chain.length || maxLen;
 
-    // Background track (light grey)
+    // Background track
     const track = _el('rect');
     track.setAttribute('x',      MARGIN_LEFT);
     track.setAttribute('y',      y);
@@ -59,8 +80,8 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     track.setAttribute('fill',   '#e8eaed');
     svg.appendChild(track);
 
-    // Filled bar proportional to length
-    const fillW = chainLen === maxLen ? barWidth : Math.max(16, (chainLen / maxLen) * barWidth);
+    // Filled bar
+    const fillW = chainLen === maxLen ? barWidth : Math.max(20, (chainLen / maxLen) * barWidth);
     const bar = _el('rect');
     bar.setAttribute('x',      MARGIN_LEFT);
     bar.setAttribute('y',      y);
@@ -71,22 +92,22 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     bar.setAttribute('opacity', '0.85');
     svg.appendChild(bar);
 
-    // Chain label (left-aligned, right of margin)
+    // Chain label
     const label = _el('text');
     label.setAttribute('x',           MARGIN_LEFT - 8);
     label.setAttribute('y',           y + BAR_HEIGHT / 2 + 4);
     label.setAttribute('text-anchor', 'end');
-    label.setAttribute('font-size',   '12');
+    label.setAttribute('font-size',   '13');
     label.setAttribute('font-family', 'monospace');
-    label.setAttribute('font-weight', '600');
+    label.setAttribute('font-weight', '700');
     label.setAttribute('fill',        color);
     label.textContent = chain.label || chain.id;
     svg.appendChild(label);
 
-    // Residue count hint (right end)
+    // Length hint
     if (chain.length) {
       const hint = _el('text');
-      hint.setAttribute('x',           MARGIN_LEFT + fillW + 5);
+      hint.setAttribute('x',           MARGIN_LEFT + fillW + 6);
       hint.setAttribute('y',           y + BAR_HEIGHT / 2 + 4);
       hint.setAttribute('text-anchor', 'start');
       hint.setAttribute('font-size',   '10');
@@ -96,7 +117,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     }
   });
 
-  // ── Draw crosslink arcs ───────────────────────────────────────────────────
+  // ── Crosslink arcs ───────────────────────────────────────────────────────
   xlGroups.forEach((grp, gi) => {
     const color = grp.color || XL_GROUP_COLORS[gi % XL_GROUP_COLORS.length];
     grp.pairs.forEach(pair => {
@@ -104,7 +125,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
     });
   });
 
-  // ── Draw disulfide bond arcs ──────────────────────────────────────────────
+  // ── Disulfide arcs ───────────────────────────────────────────────────────
   ssBonds.forEach(pair => {
     _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, '#f0b400', 'S–S', true);
   });
@@ -120,62 +141,67 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
   const c1 = chains[r1];
   const c2 = chains[r2];
 
-  const x1 = _posX(pair.pos1, c1.length || maxLen, maxLen, barWidth);
-  const x2 = _posX(pair.pos2, c2.length || maxLen, maxLen, barWidth);
-  const y1_bar = MARGIN_TOP + r1 * ROW_STRIDE;
-  const y2_bar = MARGIN_TOP + r2 * ROW_STRIDE;
+  const x1    = _posX(pair.pos1, c1.length || maxLen, maxLen, barWidth);
+  const x2    = _posX(pair.pos2, c2.length || maxLen, maxLen, barWidth);
+  const yBar1 = MARGIN_TOP + r1 * ROW_STRIDE;
+  const yBar2 = MARGIN_TOP + r2 * ROW_STRIDE;
 
-  let path;
+  let pathD;
 
   if (r1 === r2) {
-    // Intra-chain: arc above the bar
-    const yTop  = y1_bar - 6;
-    const arcH  = Math.max(12, Math.abs(x2 - x1) * 0.35);
-    const cx1   = x1;
-    const cx2   = x2;
-    const cy    = yTop - arcH;
-    path = `M ${x1} ${yTop} C ${cx1} ${cy}, ${cx2} ${cy}, ${x2} ${yTop}`;
+    const yTop = yBar1 - 8;
+    const arcH = Math.max(14, Math.abs(x2 - x1) * 0.38);
+    const cy   = yTop - arcH;
+    pathD = `M ${x1} ${yTop} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${yTop}`;
   } else {
-    // Inter-chain: arc between the two bars
-    const y1 = y1_bar + BAR_HEIGHT / 2;
-    const y2 = y2_bar + BAR_HEIGHT / 2;
-    const midY = (y1 + y2) / 2;
-    // Slight horizontal shift on control points for readability
+    const y1    = yBar1 + BAR_HEIGHT / 2;
+    const y2    = yBar2 + BAR_HEIGHT / 2;
+    const midY  = (y1 + y2) / 2;
     const shift = (x2 - x1) * 0.15;
-    path = `M ${x1} ${y1} C ${x1 + shift} ${midY}, ${x2 - shift} ${midY}, ${x2} ${y2}`;
+    pathD = `M ${x1} ${y1} C ${x1 + shift} ${midY}, ${x2 - shift} ${midY}, ${x2} ${y2}`;
   }
 
-  const arc = _el('path');
-  arc.setAttribute('d',            path);
-  arc.setAttribute('fill',         'none');
-  arc.setAttribute('stroke',       color);
-  arc.setAttribute('stroke-width', '1.8');
-  arc.setAttribute('opacity',      '0.8');
-  if (isDash) arc.setAttribute('stroke-dasharray', '4 3');
-  arc.setAttribute('class', 'xl-arc');
-  arc.setAttribute('data-key', `${pair.chain1}:${pair.pos1}:${pair.chain2}:${pair.pos2}`);
-  arc.style.cursor = 'pointer';
+  // ── Group: arc + endpoint dots ──────────────────────────────────────────
+  const group = _el('g');
+  group.setAttribute('class',    'xl-arc-group');
+  group.setAttribute('data-key', `${pair.chain1}:${pair.pos1}:${pair.chain2}:${pair.pos2}`);
+  group.setAttribute('data-label', `${label}: ${pair.chain1}:${pair.pos1} ↔ ${pair.chain2}:${pair.pos2}`);
 
-  // Tooltip via <title>
-  const title = _el('title');
-  title.textContent = `${label}: ${pair.chain1}:${pair.pos1} ↔ ${pair.chain2}:${pair.pos2}`;
-  arc.appendChild(title);
-
-  // Endpoint dots
-  [{ x: x1, row: r1 }, { x: x2, row: r2 }].forEach(({ x, row }) => {
+  // Dots (added to group before arc so arc renders on top)
+  const dotY1 = yBar1 + BAR_HEIGHT / 2;
+  const dotY2 = yBar2 + BAR_HEIGHT / 2;
+  [[x1, dotY1], [x2, dotY2]].forEach(([cx, cy]) => {
     const dot = _el('circle');
-    dot.setAttribute('cx',   x);
-    dot.setAttribute('cy',   MARGIN_TOP + row * ROW_STRIDE + BAR_HEIGHT / 2);
-    dot.setAttribute('r',    3);
-    dot.setAttribute('fill', color);
-    dot.setAttribute('opacity', '0.9');
-    svg.appendChild(dot);
+    dot.setAttribute('cx',    cx);
+    dot.setAttribute('cy',    cy);
+    dot.setAttribute('r',     '3.5');
+    dot.setAttribute('fill',  color);
+    dot.setAttribute('class', 'xl-dot');
+    group.appendChild(dot);
   });
 
-  svg.appendChild(arc);
+  // Arc path
+  const arc = _el('path');
+  arc.setAttribute('d',            pathD);
+  arc.setAttribute('fill',         'none');
+  arc.setAttribute('stroke',       color);
+  arc.setAttribute('stroke-width', '2');
+  arc.setAttribute('opacity',      '0.75');
+  if (isDash) arc.setAttribute('stroke-dasharray', '5 3');
+  arc.setAttribute('class', 'xl-arc');
+  group.appendChild(arc);
+
+  // Invisible fat hit-area for easier hovering
+  const hit = _el('path');
+  hit.setAttribute('d',            pathD);
+  hit.setAttribute('fill',         'none');
+  hit.setAttribute('stroke',       'transparent');
+  hit.setAttribute('stroke-width', '14');
+  group.appendChild(hit);
+
+  svg.appendChild(group);
 }
 
-/** X pixel position for a residue, clamped to bar bounds. */
 function _posX(resNum, chainLen, maxLen, barWidth) {
   const frac = Math.min(1, Math.max(0, (resNum - 1) / Math.max(chainLen - 1, 1)));
   return MARGIN_LEFT + frac * barWidth;
@@ -184,13 +210,13 @@ function _posX(resNum, chainLen, maxLen, barWidth) {
 function _placeholder(svg, text) {
   svg.setAttribute('height', 100);
   const t = _el('text');
-  t.setAttribute('x',           '50%');
-  t.setAttribute('y',           '50%');
-  t.setAttribute('text-anchor', 'middle');
-  t.setAttribute('dominant-baseline', 'middle');
-  t.setAttribute('font-size',   '13');
-  t.setAttribute('font-family', 'sans-serif');
-  t.setAttribute('fill',        '#bdc1c6');
+  t.setAttribute('x',                  '50%');
+  t.setAttribute('y',                  '50%');
+  t.setAttribute('text-anchor',        'middle');
+  t.setAttribute('dominant-baseline',  'middle');
+  t.setAttribute('font-size',          '13');
+  t.setAttribute('font-family',        'sans-serif');
+  t.setAttribute('fill',               '#bdc1c6');
   t.textContent = text;
   svg.appendChild(t);
 }

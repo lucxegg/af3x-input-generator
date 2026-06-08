@@ -87,7 +87,7 @@ body {
   margin: 24px auto;
   padding: 0 24px 48px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 560px);
   gap: 24px;
   align-items: start;
 }
@@ -771,15 +771,37 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 #arc-svg { display: block; width: 100%; }
 
-.arc-tooltip {
-  position: absolute;
-  background: rgba(32,33,36,.85);
-  color: #fff;
-  font-size: 11px;
-  padding: 4px 8px;
+/* Arc groups: hover highlight */
+.xl-arc-group { cursor: pointer; }
+
+.xl-arc-group:hover .xl-arc,
+.xl-arc-group.xl-arc-group-hover .xl-arc {
+  stroke-width: 3.5 !important;
+  opacity: 1 !important;
+  filter: url(#arc-glow);
+}
+
+.xl-arc-group:hover .xl-dot,
+.xl-arc-group.xl-arc-group-hover .xl-dot {
+  r: 6;
+  opacity: 1;
+}
+
+/* Floating tooltip */
+#arc-tooltip {
+  position: fixed;
+  background: rgba(28,29,33,0.92);
+  color: var(--text);
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
   pointer-events: none;
   white-space: nowrap;
+  display: none;
+  z-index: 9999;
+  box-shadow: var(--shadow);
 }
 
 /* ─── JSON Output ──────────────────────────────────────────────────────────── */
