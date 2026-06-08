@@ -771,6 +771,68 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 #arc-svg { display: block; width: 100%; overflow: hidden; }
 
+/* Expand button */
+.topo-expand-btn { font-size: 12px; padding: 2px 8px; }
+
+/* ─── Interactive topology modal ─────────────────────────────────────────── */
+.topo-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topo-modal-inner {
+  width: 96vw;
+  height: 92vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,.6);
+}
+
+.topo-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.topo-modal-title-row { display: flex; flex-direction: column; gap: 2px; }
+.topo-modal-title { font-size: 14px; font-weight: 600; }
+.topo-modal-hint { font-size: 11px; color: var(--text-3); }
+.topo-modal-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.topo-expand-svg {
+  flex: 1;
+  width: 100%;
+  display: block;
+  background: var(--bg-input);
+  cursor: move;
+  overflow: hidden;
+}
+
+/* Arc hover highlight inside interactive modal */
+.topo-xl-group { cursor: pointer; }
+.topo-xl-group:hover .topo-arc {
+  stroke-width: 3.5 !important;
+  opacity: 1    !important;
+  filter: url(#topo-glow);
+}
+.topo-xl-group:hover .topo-dot { r: 6; }
+
+/* Chain bars are draggable */
+.topo-chain-bar { cursor: grab; }
+.topo-chain-bar:active { cursor: grabbing; }
+
 /* Arc groups: hover highlight */
 .xl-arc-group { cursor: pointer; }
 

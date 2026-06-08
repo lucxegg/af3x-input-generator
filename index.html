@@ -206,7 +206,10 @@
         <div class="card viz-card">
           <div class="card-header-row">
             <h2 class="card-title">Structure Topology</h2>
-            <span class="viz-hint" id="vizHint">live preview</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="viz-hint" id="vizHint">live preview</span>
+              <button id="expandTopologyBtn" class="btn btn-ghost btn-xs topo-expand-btn" title="Open interactive view">⤢ Expand</button>
+            </div>
           </div>
           <div id="arc-diagram-wrap">
             <svg id="arc-svg" width="100%" height="100"></svg>
@@ -407,6 +410,23 @@
 
   <!-- Floating arc tooltip -->
   <div id="arc-tooltip"></div>
+
+  <!-- Interactive topology modal -->
+  <div id="topology-modal" class="topo-modal-overlay" style="display:none" tabindex="-1">
+    <div class="topo-modal-inner">
+      <div class="topo-modal-header">
+        <div class="topo-modal-title-row">
+          <h2 class="topo-modal-title">Structure Topology</h2>
+          <span class="topo-modal-hint">Scroll to zoom · Drag background to pan · Drag protein bar to reorder</span>
+        </div>
+        <div class="topo-modal-actions">
+          <button id="topoResetView" class="btn btn-outline btn-sm">Reset view</button>
+          <button id="topoModalClose" class="btn btn-ghost btn-sm">✕</button>
+        </div>
+      </div>
+      <svg id="topology-expand-svg" class="topo-expand-svg"></svg>
+    </div>
+  </div>
 
   <script type="module" src="js/app.js"></script>
 </body>

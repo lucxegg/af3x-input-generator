@@ -10,6 +10,7 @@ import { drawArcDiagram } from './viz.js';
 import { openImportModal, initImportModal, _shortProteinName } from './csv_import.js';
 import { openPdbModal, initPdbModal } from './pdb_import.js';
 import { updateXlStats } from './xl_stats.js';
+import { openInteractiveTopology, initInteractiveTopology } from './topology_interactive.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   _initJsonImport();
   initImportModal();
   initPdbModal();
+  initInteractiveTopology();
 
   // Add-entity buttons
   document.querySelectorAll('.btn-add-entity').forEach(btn => {
@@ -67,6 +69,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('csvFileInput').click();
   });
   document.getElementById('csvFileInput').addEventListener('change', _handleCsvFile);
+
+  // Expand interactive topology
+  document.getElementById('expandTopologyBtn').addEventListener('click', () => {
+    const chains   = _readChainsFromDOM();
+    const xlGroups = _readXlGroupsFromDOM();
+    const ssBonds  = _readSsBondsFromDOM();
+    openInteractiveTopology(chains, xlGroups, ssBonds);
+  });
 
   // PDB / mmCIF import
   document.getElementById('importPdbBtn').addEventListener('click', () => {
