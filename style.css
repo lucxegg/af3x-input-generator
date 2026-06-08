@@ -769,7 +769,7 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   min-height: 100px;
 }
 
-#arc-svg { display: block; width: 100%; }
+#arc-svg { display: block; width: 100%; overflow: hidden; }
 
 /* Arc groups: hover highlight */
 .xl-arc-group { cursor: pointer; }

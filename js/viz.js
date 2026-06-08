@@ -2,11 +2,12 @@
 
 import { CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
 
-const MARGIN_LEFT  = 76;
-const MARGIN_RIGHT = 24;
-const MARGIN_TOP   = 22;
-const BAR_HEIGHT   = 18;
-const ROW_STRIDE   = 74;  // centre-to-centre vertical distance between bars
+const MARGIN_LEFT   = 76;
+const MARGIN_RIGHT  = 24;
+const MARGIN_TOP    = 68;  // tall enough to fit intra-chain arcs above row 0
+const BAR_HEIGHT    = 18;
+const ROW_STRIDE    = 74;  // centre-to-centre vertical distance between bars
+const MAX_INTRA_ARC = 52;  // max height of intra-chain arc above bar
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -150,7 +151,7 @@ function _drawArc(svg, pair, chainRow, chains, barWidth, maxLen, color, label, i
 
   if (r1 === r2) {
     const yTop = yBar1 - 8;
-    const arcH = Math.max(14, Math.abs(x2 - x1) * 0.38);
+    const arcH = Math.min(MAX_INTRA_ARC, Math.max(12, Math.abs(x2 - x1) * 0.35));
     const cy   = yTop - arcH;
     pathD = `M ${x1} ${yTop} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${yTop}`;
   } else {
