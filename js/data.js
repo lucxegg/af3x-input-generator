@@ -127,6 +127,15 @@ export const CROSSLINKERS = [
     asymmetricNote: 'Residue 1: NHS-ester (K, S, T, Y, N-term) · Residue 2: diazirine (any AA)',
   },
   {
+    name: 'SDA25A',
+    symmetric: false,
+    category: 'NHS-ester + diazirine (asymmetric)',
+    reactiveResidues: [['K', 'S', 'T', 'Y', 'N-term'], ['any AA']],
+    spacer: '~25 Å',
+    description: 'SDA with 25 Å spacer arm — long-range variant (experimental AF3x branch)',
+    asymmetricNote: 'Residue 1: NHS-ester (K, S, T, Y, N-term) · Residue 2: diazirine (any AA)',
+  },
+  {
     name: 'LCSDA',
     symmetric: false,
     category: 'NHS-ester + diazirine (asymmetric)',

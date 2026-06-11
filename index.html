@@ -322,16 +322,15 @@
       <section class="about-section">
         <h2>Supported Crosslinkers</h2>
         <p>
-          All crosslinkers below are natively supported by AF3x and available as presets.
+          All crosslinkers below are supported by AF3x and available as presets.
           Symmetric crosslinkers react with both residues identically; asymmetric crosslinkers
           have distinct chemistry at each end — residue order matters.
           <strong>Dynamic linkers</strong> (LINK<em>n</em>, RIGID<em>n</em>) are generated on the fly
           with a given chain length; the name in the JSON must include the number (e.g. <code>LINK5</code>).
         </p>
-        <p style="color:var(--warning);font-size:12px">
-          Note: <strong>SDA25A</strong> (25 Å spacer SDA variant used in some benchmarks) is <em>not</em> a
-          named crosslinker in AF3x and will cause a runtime error if used as a crosslink name.
-          Use <code>SDA</code> (~5 Å) or <code>LCSDA</code> (~11 Å) as the closest available alternatives.
+        <p style="color:var(--text-2);font-size:12px">
+          Note: <strong>SDA25A</strong> is available in the <em>experimental</em> AF3x branch only.
+          The stable <code>main</code> branch supports SDA, LCSDA, and SDAD but not SDA25A.
         </p>
         <div id="about-xl-table-wrap"></div>
       </section>
