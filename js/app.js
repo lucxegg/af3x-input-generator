@@ -2204,8 +2204,12 @@ function _buildJSON() {
     }
 
     const seqTA = card.querySelector('.seq-textarea');
-    const seq   = (seqTA?.value || '').trim().replace(/\s/g, '');
+    const seq   = (seqTA?.value || '').trim().replace(/\s/g, '').toUpperCase();
     if (!seq) throw new Error(`Chain "${chainRaw}": sequence is empty.`);
+    if (type === 'rna' && /[^ACGU]/.test(seq))
+      throw new Error(`Chain "${chainRaw}": RNA sequence may only contain A, C, G, U.`);
+    if (type === 'dna' && /[^ACGT]/.test(seq))
+      throw new Error(`Chain "${chainRaw}": DNA sequence may only contain A, C, G, T.`);
     seqData.sequence = seq;
 
     // Modifications
