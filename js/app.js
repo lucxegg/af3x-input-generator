@@ -155,7 +155,52 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }, 150);
   });
+
+  // Tab switching
+  document.querySelectorAll('.app-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.app-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.querySelector('.main-layout').style.display  = tab === 'build' ? '' : 'none';
+      document.getElementById('about-panel').style.display  = tab === 'about' ? '' : 'none';
+    });
+  });
+
+  // Build about crosslinker table
+  _buildAboutXlTable();
 });
+
+function _buildAboutXlTable() {
+  const wrap = document.getElementById('about-xl-table-wrap');
+  if (!wrap) return;
+  const rows = CROSSLINKERS.map(xl => {
+    const reactText = xl.dynamic ? '—'
+      : xl.symmetric
+        ? (xl.reactiveResidues || []).join(', ')
+        : `<span style="color:var(--text-2)">End 1:</span> ${xl.reactiveResidues[0].join(', ')}<br><span style="color:var(--text-2)">End 2:</span> ${xl.reactiveResidues[1].join(', ')}`;
+    const badge = xl.dynamic
+      ? `<span class="xl-ref-dyn">dynamic</span>`
+      : xl.symmetric
+        ? `<span class="xl-ref-sym">symmetric</span>`
+        : `<span class="xl-ref-asym">asymmetric</span>`;
+    return `<tr>
+      <td class="xl-ref-name">${xl.name}</td>
+      <td>${xl.category}</td>
+      <td class="xl-ref-spacer">${xl.spacer || '—'}</td>
+      <td>${reactText}</td>
+      <td>${badge}</td>
+      <td>${xl.description || ''}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <table class="xl-ref-table">
+      <thead><tr>
+        <th>Name</th><th>Category</th><th>Spacer</th><th>Reactive residues</th><th>Type</th><th>Description</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
 
 // ─── Sequence Cards ───────────────────────────────────────────────────────────
 

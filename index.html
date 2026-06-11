@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AF3x Input Generator</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
+  <link rel="apple-touch-icon" href="assets/favicon-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -28,6 +31,12 @@
       </nav>
     </div>
   </header>
+
+  <!-- ─── App tab bar ─────────────────────────────────────────────────────── -->
+  <div class="app-tab-bar">
+    <button class="app-tab active" data-tab="build">Build</button>
+    <button class="app-tab" data-tab="about">About &amp; Guide</button>
+  </div>
 
   <!-- ─── Restore session banner ──────────────────────────────────────────── -->
   <div id="restoreBanner" class="restore-banner" style="display:none">
@@ -256,6 +265,107 @@
     </div><!-- /bottom-section -->
 
   </div><!-- /main-layout -->
+
+  <!-- ─── About / Guide panel ─────────────────────────────────────────────── -->
+  <div class="about-layout" id="about-panel" style="display:none">
+    <div class="about-inner">
+
+      <!-- Intro -->
+      <section class="about-section">
+        <h2>What is AF3x?</h2>
+        <p>
+          <strong>AF3x (AlphaFold 3 Extended)</strong> is a modified version of AlphaFold 3 developed at the
+          <a href="https://www.embl.org/groups/kosinski/" target="_blank" rel="noopener">Kosinski Lab (EMBL)</a>
+          that accepts explicit <strong>crosslink restraints</strong> as input. Crosslinks are modelled as
+          small-molecule covalent bridges between two residues, giving the network of distance constraints
+          to guide structure prediction.
+        </p>
+        <p>
+          This tool generates the JSON input files required by AF3x. It handles sequences, crosslinker
+          molecules, disulfide bonds, PTMs, covalent ligand bonds, and batch export for screening.
+        </p>
+      </section>
+
+      <!-- Quick Start -->
+      <section class="about-section">
+        <h2>Quick Start</h2>
+        <ol class="about-steps">
+          <li>
+            <strong>Add sequences</strong> — click <em>+ Protein / RNA / DNA / Ligand</em> and paste your
+            sequence or CCD code. Import a PDB/mmCIF or FASTA file for quick setup.
+            Each chain gets an auto-assigned letter (A, B, C…).
+          </li>
+          <li>
+            <strong>Add crosslinks</strong> — click <em>+ Add crosslinker</em>, choose a preset from the
+            dropdown, then enter chain + residue pairs. Use <em>Pick XL Residues</em> to click directly
+            in the sequence view. One residue position may only appear in one crosslink pair per crosslinker group.
+          </li>
+          <li>
+            <strong>Optional constraints</strong> — add disulfide bonds, PTMs, or bonded atom pairs as needed.
+          </li>
+          <li>
+            <strong>Set seeds</strong> — enter a number <em>N</em> to generate seeds 1…N, or enter them
+            manually (e.g. <code>1,2,3,5</code>). More seeds = more diverse model ensemble.
+          </li>
+          <li>
+            <strong>Generate</strong> — click <em>Generate JSON</em>. Download the file and pass it to
+            AF3x as the <code>--input_json</code> argument.
+          </li>
+          <li>
+            <strong>Batch export</strong> — expand <em>Batch export / Screening</em> to download one JSON
+            per crosslink pair, or random subsets of crosslinks across many jobs.
+          </li>
+        </ol>
+      </section>
+
+      <!-- Supported crosslinkers -->
+      <section class="about-section">
+        <h2>Supported Crosslinkers</h2>
+        <p>
+          All crosslinkers below are available as presets. Symmetric crosslinkers react with both residues
+          identically; asymmetric crosslinkers have distinct chemistry at each end — residue order matters.
+        </p>
+        <div id="about-xl-table-wrap"></div>
+      </section>
+
+      <!-- CSV Import -->
+      <section class="about-section">
+        <h2>Importing Crosslinks from CSV</h2>
+        <p>
+          Click <em>Import from CSV ↑</em> in the Crosslinks section to load an existing XL-MS result file.
+          Two formats are supported natively:
+        </p>
+        <ul class="about-list">
+          <li><strong>xiNET CSV</strong> — output from xiNET / xiSEARCH. Columns: <code>Protein1, PepPos1, PepSeq1, LinkPos1, Protein2, PepPos2, PepSeq2, LinkPos2, …</code></li>
+          <li><strong>xiVIEW CSV</strong> — output from xiVIEW. Columns: <code>Protein1, SeqPos1, Protein2, SeqPos2, …</code></li>
+        </ul>
+        <p>
+          For other search engines (pLink, MeroX, XlinkX, MS Annika, Scout, MaxQuant/MaxLynx…), start the
+          bundled <strong>xkit conversion server</strong> in your conda environment and the importer will
+          convert automatically:
+        </p>
+        <pre class="about-code">conda activate xkit_env
+python xkit_server.py        # starts on http://localhost:5174</pre>
+        <p>
+          After chain mapping you can review, filter, and confirm which crosslinks to import.
+        </p>
+      </section>
+
+      <!-- Tips -->
+      <section class="about-section">
+        <h2>Tips &amp; Notes</h2>
+        <ul class="about-list">
+          <li><strong>Residue numbering is 1-based</strong> — position 1 is the first residue in your input sequence, regardless of PDB numbering.</li>
+          <li><strong>Chain IDs</strong> — use the chain ID assigned in the Sequences panel (e.g. A, B). One chain card can represent multiple copies (homodimers) by entering comma-separated IDs: <code>A,B</code>.</li>
+          <li><strong>Asymmetric crosslinkers</strong> — residue 1 is the NHS-ester end (reacts with K/S/T/Y/N-term), residue 2 is the diazirine end (any AA). The order matters for how AF3x places the linker.</li>
+          <li><strong>SASD vs Euclidean distance</strong> — the max-distance threshold in each crosslinker preset is a solvent-accessible surface distance (SASD). The Euclidean CB–CB distance is always shorter; a pair passing the Euclidean check may still fail SASD if the path goes around an interface.</li>
+          <li><strong>Seeds</strong> — AF3x uses model seeds to generate diverse structural models. A single seed produces one model; using 5 seeds gives an ensemble for picking the best-ranked prediction.</li>
+          <li><strong>Version field</strong> — the AF3x input format version (typically 2). Change only if your AF3x version requires a different schema.</li>
+        </ul>
+      </section>
+
+    </div>
+  </div><!-- /about-layout -->
 
   <!-- ─── PTM Picker Modal ─────────────────────────────────────────────────── -->
   <div id="ptm-modal" class="modal-overlay" style="display:none"
