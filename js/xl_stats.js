@@ -8,7 +8,7 @@ export function updateXlStats() {
 
   const allPairs = [];
   document.querySelectorAll('.xl-group-card').forEach(card => {
-    const xlSel = card.querySelector('.xl-select');
+    const xlSel  = card.querySelector('.xl-select');
     const xlName = xlSel?.value || '?';
     card.querySelectorAll('.xl-pair-row').forEach(row => {
       const c1 = row.querySelector('.xl-chain-a')?.value.trim();
@@ -32,26 +32,28 @@ export function updateXlStats() {
   const nIntra = allPairs.filter(p => p.isIntra).length;
   const nInter = n - nIntra;
 
-  // Count per chain-pair (canonical order: smaller chain first)
+  // Per chain-pair breakdown (canonical order: smaller chain first)
   const pairCounts = {};
   allPairs.forEach(p => {
-    const key = p.c1 <= p.c2 ? `${p.c1}↔${p.c2}` : `${p.c2}↔${p.c1}`;
-    pairCounts[key] = (pairCounts[key] || 0) + 1;
+    const key      = p.c1 <= p.c2 ? `${p.c1}↔${p.c2}` : `${p.c2}↔${p.c1}`;
+    const isIntra  = p.c1 === p.c2;
+    if (!pairCounts[key]) pairCounts[key] = { count: 0, isIntra };
+    pairCounts[key].count++;
   });
+  const sortedPairs = Object.entries(pairCounts).sort((a, b) => b[1].count - a[1].count);
 
-  const sortedPairs = Object.entries(pairCounts).sort((a, b) => b[1] - a[1]);
-
-  const pairRows = sortedPairs.map(([key, cnt]) =>
-    `<span class="xl-stat-pair">${key}: <strong>${cnt}</strong></span>`
-  ).join('');
+  const pairChips = sortedPairs.map(([key, { count, isIntra }]) => {
+    const cls = isIntra ? 'xl-stat-chip xl-stat-chip-intra' : 'xl-stat-chip xl-stat-chip-inter';
+    return `<span class="${cls}"><span class="xl-chip-key">${key}</span><span class="xl-chip-count">${count}</span></span>`;
+  }).join('');
 
   container.innerHTML = `
-    <div class="xl-stats-summary">
-      <span class="xl-stat-total">${n} crosslink${n!==1?'s':''}</span>
+    <div class="xl-stats-header">
+      <span class="xl-stats-total">${n} pair${n !== 1 ? 's' : ''}</span>
       <span class="xl-stat-sep">·</span>
-      <span class="xl-stat-inter">${nInter} inter</span>
+      <span class="xl-bar-inter">${nInter} inter</span>
       <span class="xl-stat-sep">·</span>
-      <span class="xl-stat-intra">${nIntra} intra</span>
+      <span class="xl-bar-intra">${nIntra} intra</span>
     </div>
-    <div class="xl-stats-pairs">${pairRows}</div>`;
+    <div class="xl-stats-chips">${pairChips}</div>`;
 }

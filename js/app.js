@@ -30,6 +30,9 @@ let _xlPendingPair = null; // null | { c1, p1, c2, p2 } — waiting for popup co
 // Modification residue pick state
 let _modPickState = null; // null | { seqId, row, targetAA }
 
+// Disulfide bond residue pick state
+let _ssPickState = null; // null | { row, slot: 'a'|'b' }
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -100,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if (_modPickState)   { _exitModPickMode(); return; }
+      if (_ssPickState)    { _exitSsPickMode();  return; }
       if (_xlPendingPair) { _closePendingPair(); return; }
       if (_xlPickState)   { _clearPickState(); return; }
       if (_xlPickMode)    { _toggleXlPickMode(); }
@@ -435,6 +439,26 @@ function _wireSeqInputTabs(card, type, id) {
     display.addEventListener('click', e => {
       const resSpan = e.target.closest('.seq-res');
 
+      // SS bond residue pick mode: first click → slot A, second click → slot B + close
+      if (resSpan && _ssPickState) {
+        e.stopPropagation();
+        const pos      = parseInt(resSpan.dataset.pos);
+        const chainIds = (display.dataset.chainId || '').split(',').filter(Boolean);
+        if (pos && chainIds.length) {
+          const { row, slot } = _ssPickState;
+          row.querySelector(`.ss-chain-${slot}`).value = chainIds[0];
+          row.querySelector(`.ss-pos-${slot}`).value   = pos;
+          if (slot === 'a') {
+            _ssPickState.slot = 'b';  // advance to second residue
+            document.querySelectorAll('.seq-card').forEach(c => _updateRuler(c));
+          } else {
+            _exitSsPickMode();
+          }
+          updateViz();
+        }
+        return;
+      }
+
       // Mod residue pick mode: clicking a residue fills the position input
       if (resSpan && _modPickState?.seqId === id) {
         e.stopPropagation();
@@ -467,17 +491,32 @@ function _wireSeqInputTabs(card, type, id) {
       seqTA.focus();
     });
 
-    // Tooltip for XL- and PTM-highlighted residues
+    // Tooltip for XL- and PTM-highlighted residues, and residue position in pick mode
     const tooltip = document.getElementById('arc-tooltip');
     display.addEventListener('mouseover', e => {
-      const xlHl  = e.target.closest('.xl-hl');
-      const modHl = e.target.closest('.mod-valid, .mod-selected');
-      if (xlHl && tooltip && xlHl.dataset.xlInfo) {
-        tooltip.textContent = xlHl.dataset.xlInfo;
+      const resSpan = e.target.closest('.seq-res');
+      const xlHl    = e.target.closest('.xl-hl');
+      const modHl   = e.target.closest('.mod-valid, .mod-selected');
+      if (!tooltip) return;
+
+      if (xlHl && xlHl.dataset.xlInfo) {
+        tooltip.innerHTML = `<span class="tip-text">${xlHl.dataset.xlInfo.replace(/\n/g,'<br>')}</span>`;
         tooltip.style.display = 'block';
-      } else if (modHl && tooltip && modHl.dataset.modInfo) {
-        tooltip.textContent = modHl.dataset.modInfo;
+      } else if (modHl && modHl.dataset.modInfo) {
+        tooltip.innerHTML = `<span class="tip-text">${modHl.dataset.modInfo}</span>`;
         tooltip.style.display = 'block';
+      } else if (resSpan) {
+        const pos      = resSpan.dataset.pos;
+        const chainId  = (display.dataset.chainId || '').split(',')[0];
+        const aa       = resSpan.textContent;
+        const posLabel = chainId ? `${chainId} · ${pos}` : `pos ${pos}`;
+        const color    = getComputedStyle(display.closest('.seq-card') || document.body)
+                           .getPropertyValue('--chain-color').trim() || 'var(--primary)';
+        tooltip.style.setProperty('--tip-chain-color', color);
+        tooltip.innerHTML = `<span class="tip-res-aa">${aa}</span><span class="tip-res-pos">${posLabel}</span>`;
+        tooltip.style.display = 'block';
+      } else {
+        tooltip.style.display = 'none';
       }
     });
     display.addEventListener('mousemove', e => {
@@ -973,6 +1012,7 @@ function _updateRuler(card) {
 
       const xlHL  = chainId ? _buildXlHighlights(chainId) : new Map();
       const modHL = _buildModHighlights(card.dataset.id);
+      _buildSsPickHighlights(card.dataset.id).forEach((v, k) => { if (!modHL.has(k)) modHL.set(k, v); });
       display.innerHTML     = _formatSeqHTML(seq, lineLen, xlHL, modHL);
       display.style.display = 'block';
       seqTA.style.display   = 'none';
@@ -1287,6 +1327,14 @@ function _addXlPair(card, xlId, defaults = {}) {
 
 // ─── Disulfide Bonds ──────────────────────────────────────────────────────────
 
+const _SS_PICK_SVG = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="4.5" stroke="currentColor" stroke-width="1.6"/>
+  <line x1="8" y1="1" x2="8" y2="4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="8" y1="12" x2="8" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="1" y1="8" x2="4" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  <line x1="12" y1="8" x2="15" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>`;
+
 function addSsBond() {
   _ssCounter++;
   const id = `ss_${_ssCounter}`;
@@ -1302,14 +1350,58 @@ function addSsBond() {
     <span class="pair-sep">↔</span>
     <input type="text" class="ss-chain-b" placeholder="Chain" maxlength="4">
     <input type="number" class="ss-pos-b" placeholder="Cys res" min="1">
+    <button class="btn-icon ss-pick-btn" title="Pick two Cys residues in sequence">${_SS_PICK_SVG}</button>
     <button class="btn-icon btn-remove-pair" title="Remove">✕</button>`;
 
   row.querySelector('.btn-remove-pair').addEventListener('click', () => {
+    if (_ssPickState?.row === row) _exitSsPickMode();
     row.remove();
     updateViz();
   });
   row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateViz));
+  row.querySelector('.ss-pick-btn').addEventListener('click', () => _toggleSsPickMode(row));
   container.appendChild(row);
+}
+
+function _toggleSsPickMode(row) {
+  if (_ssPickState?.row === row) { _exitSsPickMode(); return; }
+  _exitSsPickMode();
+  if (_modPickState) _exitModPickMode();
+  _ssPickState = { row, slot: 'a' };
+  row.querySelector('.ss-pick-btn')?.classList.add('ss-pick-active');
+  document.querySelectorAll('.seq-card').forEach(card => _updateRuler(card));
+}
+
+function _exitSsPickMode() {
+  if (!_ssPickState) return;
+  _ssPickState.row.querySelector('.ss-pick-btn')?.classList.remove('ss-pick-active');
+  _ssPickState = null;
+  document.querySelectorAll('.seq-card').forEach(card => _updateRuler(card));
+}
+
+function _buildSsPickHighlights(seqId) {
+  const hl = new Map();
+  if (!_ssPickState) return hl;
+  const card     = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const chainRaw = card?.querySelector('.seq-chain-id')?.value.trim() || '';
+  const seq      = card?.querySelector('.seq-textarea')?.value.trim().replace(/\s/g,'').toUpperCase() || '';
+  if (!seq || !chainRaw) return hl;
+  const chainIds = chainRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const { row } = _ssPickState;
+  const selA_c = row.querySelector('.ss-chain-a')?.value.trim();
+  const selA_p = parseInt(row.querySelector('.ss-pos-a')?.value) || 0;
+  const selB_c = row.querySelector('.ss-chain-b')?.value.trim();
+  const selB_p = parseInt(row.querySelector('.ss-pos-b')?.value) || 0;
+  for (let i = 0; i < seq.length; i++) {
+    if (seq[i] === 'C') {
+      const pos    = i + 1;
+      const isSel  = (chainIds.includes(selA_c) && selA_p === pos) ||
+                     (chainIds.includes(selB_c) && selB_p === pos);
+      hl.set(pos, { type: isSel ? 'selected' : 'valid', ccd: 'SS', targetAA: 'C',
+                    color: '#f0b400', name: 'Cysteine (S–S)' });
+    }
+  }
+  return hl;
 }
 
 // ─── Bonded Atom Pairs ────────────────────────────────────────────────────────
@@ -1320,27 +1412,20 @@ function addBond() {
 
   const container = document.getElementById('bonds-container');
   const div = document.createElement('div');
-  div.className = 'bond-entry subsection';
+  div.className = 'bond-pair-row';
   div.dataset.id = id;
   div.innerHTML = `
-    <div class="bond-atoms">
-      <div class="bond-atom-group">
-        <span class="atom-label">Atom 1</span>
-        <input type="text" class="bond-entity-a" placeholder="Chain ID" maxlength="4">
-        <input type="number" class="bond-res-a" placeholder="Res (1-based)" min="1">
-        <input type="text" class="bond-atom-a" placeholder="Atom name (e.g. SG)" maxlength="8">
-      </div>
-      <span class="bond-dash">—</span>
-      <div class="bond-atom-group">
-        <span class="atom-label">Atom 2</span>
-        <input type="text" class="bond-entity-b" placeholder="Chain ID" maxlength="4">
-        <input type="number" class="bond-res-b" placeholder="Res (1-based)" min="1">
-        <input type="text" class="bond-atom-b" placeholder="Atom name (e.g. C04)" maxlength="8">
-      </div>
-      <button class="btn btn-danger btn-xs remove-bond-btn">Remove</button>
-    </div>`;
+    <span class="pair-num bond-num">${_bondCounter}</span>
+    <input type="text"   class="bond-entity-a" placeholder="Chain" maxlength="4">
+    <input type="number" class="bond-res-a"    placeholder="Res"   min="1">
+    <input type="text"   class="bond-atom-a"   placeholder="Atom"  maxlength="8">
+    <span class="bond-connector">—</span>
+    <input type="text"   class="bond-entity-b" placeholder="Chain" maxlength="4">
+    <input type="number" class="bond-res-b"    placeholder="Res"   min="1">
+    <input type="text"   class="bond-atom-b"   placeholder="Atom"  maxlength="8">
+    <button class="btn-icon btn-remove-pair" title="Remove">✕</button>`;
 
-  div.querySelector('.remove-bond-btn').addEventListener('click', () => div.remove());
+  div.querySelector('.btn-remove-pair').addEventListener('click', () => div.remove());
   container.appendChild(div);
 }
 
@@ -1696,7 +1781,8 @@ function _populateFromJSON(json) {
   document.getElementById('sequences-container').innerHTML = '';
   document.getElementById('crosslinks-container').innerHTML = '';
   document.getElementById('ss-bonds-container').innerHTML = '';
-  _seqCounter = 0; _xlCounter = 0; _ssCounter = 0;
+  document.getElementById('bonds-container').innerHTML = '';
+  _seqCounter = 0; _xlCounter = 0; _ssCounter = 0; _bondCounter = 0;
 
   // Job settings
   document.getElementById('jobName').value      = json.name || '';
@@ -1813,6 +1899,20 @@ function _populateFromJSON(json) {
         row.querySelector('.ss-pos-b').value   = pair[1][1];
       }
     });
+  });
+
+  // Bonded atom pairs
+  (json.bondedAtomPairs || []).forEach(bond => {
+    addBond();
+    const div = document.querySelector('.bond-pair-row:last-child');
+    if (div) {
+      div.querySelector('.bond-entity-a').value = bond[0][0] || '';
+      div.querySelector('.bond-res-a').value    = bond[0][1] || '';
+      div.querySelector('.bond-atom-a').value   = bond[0][2] || '';
+      div.querySelector('.bond-entity-b').value = bond[1][0] || '';
+      div.querySelector('.bond-res-b').value    = bond[1][1] || '';
+      div.querySelector('.bond-atom-b').value   = bond[1][2] || '';
+    }
   });
 
   // User CCD
@@ -1959,6 +2059,20 @@ function _validateGeneratedJSON(jsonObj) {
     });
   });
 
+  // Duplicate residue positions across all XL pairs
+  const xlPosUsage = {};
+  (jsonObj.crosslinks || []).forEach(group => {
+    (group.residue_pairs || []).forEach(pair => {
+      const k1 = `${pair[0][0]}:${pair[0][1]}`;
+      const k2 = `${pair[1][0]}:${pair[1][1]}`;
+      xlPosUsage[k1] = (xlPosUsage[k1] || 0) + 1;
+      xlPosUsage[k2] = (xlPosUsage[k2] || 0) + 1;
+    });
+  });
+  Object.entries(xlPosUsage).forEach(([key, count]) => {
+    if (count > 1) errors.push(`Residue ${key} appears in ${count} crosslink pairs — each residue may only be crosslinked once`);
+  });
+
   // Disulfide bonds
   (jsonObj.disulfide_bonds || []).forEach(group => {
     (group.residue_pairs || []).forEach(pair => {
@@ -1995,11 +2109,20 @@ function _showValidationReport(errors, warnings, infos = []) {
 
 function _buildJSON() {
   const name    = document.getElementById('jobName').value.trim();
-  const seedRaw = document.getElementById('modelSeeds').value;
+  const seedRaw = document.getElementById('modelSeeds').value.trim();
   const version = parseInt(document.getElementById('inputVersion').value) || 4;
 
-  const seeds = seedRaw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-  if (!seeds.length) throw new Error('At least one model seed is required.');
+  let seeds;
+  if (/^\d+$/.test(seedRaw)) {
+    // Single integer N → generate seeds 1…N
+    const n = parseInt(seedRaw);
+    if (n < 1 || n > 100) throw new Error('Seed count must be between 1 and 100.');
+    seeds = Array.from({ length: n }, (_, i) => i + 1);
+  } else {
+    // Comma-separated list → use exact values
+    seeds = seedRaw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    if (!seeds.length) throw new Error('At least one model seed is required.');
+  }
   if (!name) throw new Error('Job name is required.');
 
   // Field order matches real AF3x JSON files
@@ -2162,7 +2285,7 @@ function _buildJSON() {
 
   // ── Bonded atom pairs ───────────────────────────────────────────────────────
   const bonds = [];
-  document.querySelectorAll('.bond-entry').forEach(div => {
+  document.querySelectorAll('.bond-pair-row').forEach(div => {
     const ea = div.querySelector('.bond-entity-a')?.value.trim();
     const ra = parseInt(div.querySelector('.bond-res-a')?.value) || null;
     const aa = div.querySelector('.bond-atom-a')?.value.trim();
@@ -2636,6 +2759,17 @@ function _checkXlPositions() {
     });
   });
 
+  // Build duplicate-position map: "chain:pos" → count across all pairs
+  const posUsage = {};
+  document.querySelectorAll('.xl-pair-row').forEach(row => {
+    const c1 = row.querySelector('.xl-chain-a')?.value.trim();
+    const p1 = parseInt(row.querySelector('.xl-pos-a')?.value) || 0;
+    const c2 = row.querySelector('.xl-chain-b')?.value.trim();
+    const p2 = parseInt(row.querySelector('.xl-pos-b')?.value) || 0;
+    if (c1 && p1) posUsage[`${c1}:${p1}`] = (posUsage[`${c1}:${p1}`] || 0) + 1;
+    if (c2 && p2) posUsage[`${c2}:${p2}`] = (posUsage[`${c2}:${p2}`] || 0) + 1;
+  });
+
   document.querySelectorAll('.xl-pair-row').forEach(row => {
     const posWarn  = row.querySelector('.xl-pos-warn');
     const chemWarn = row.querySelector('.xl-chem-warn');
@@ -2651,6 +2785,15 @@ function _checkXlPositions() {
     } else if (c2 && p2 && chainLen[c2] && p2 > chainLen[c2]) {
       posMsg = `${c2}: pos ${p2} > len ${chainLen[c2]}`;
     }
+
+    // Duplicate position check — each residue may appear in at most one XL pair
+    if (!posMsg) {
+      const dups = [];
+      if (c1 && p1 && posUsage[`${c1}:${p1}`] > 1) dups.push(`${c1}:${p1}`);
+      if (c2 && p2 && posUsage[`${c2}:${p2}`] > 1) dups.push(`${c2}:${p2}`);
+      if (dups.length) posMsg = `residue${dups.length > 1 ? 's' : ''} ${dups.join(', ')} used in multiple pairs`;
+    }
+
     if (posWarn) {
       posWarn.textContent   = posMsg ? `⚠ ${posMsg}` : '';
       posWarn.style.display = posMsg ? 'inline' : 'none';
