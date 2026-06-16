@@ -39,25 +39,6 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
   // Store full viewBox for zoom-restore
   svg.dataset.fullVb = `0 0 ${svgWidth} ${svgHeight}`;
 
-  // SVG defs: glow filter
-  const defs   = _el('defs');
-  const filter = _el('filter');
-  filter.setAttribute('id', 'arc-glow');
-  filter.setAttribute('x', '-60%'); filter.setAttribute('y', '-60%');
-  filter.setAttribute('width', '220%'); filter.setAttribute('height', '220%');
-  const blur = _el('feGaussianBlur');
-  blur.setAttribute('in', 'SourceGraphic');
-  blur.setAttribute('stdDeviation', '3');
-  blur.setAttribute('result', 'blurred');
-  const merge  = _el('feMerge');
-  const mNode1 = _el('feMergeNode'); mNode1.setAttribute('in', 'blurred');
-  const mNode2 = _el('feMergeNode'); mNode2.setAttribute('in', 'SourceGraphic');
-  merge.appendChild(mNode1);
-  merge.appendChild(mNode2);
-  filter.appendChild(blur);
-  filter.appendChild(merge);
-  defs.appendChild(filter);
-  svg.appendChild(defs);
 
   // Chain row → index map
   const chainRow = {};

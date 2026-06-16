@@ -33,6 +33,9 @@ let _modPickState = null; // null | { seqId, row, targetAA }
 // Disulfide bond residue pick state
 let _ssPickState = null; // null | { row, slot: 'a'|'b' }
 
+// XL pair row residue pick state (per-row pick button)
+let _xlRowPickState = null; // null | { row, slot: 'a'|'b' }
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -70,6 +73,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('batchComboM').addEventListener('input', _updateBatchInfo);
   document.getElementById('batchPanel').addEventListener('toggle', _updateBatchInfo);
 
+  // Reset button
+  document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+
   // JSON import button
   document.getElementById('importBtn').addEventListener('click', () => {
     document.getElementById('importFileInput').click();
@@ -102,15 +109,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // XL pick: ESC cancels everything, banner cancel button
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (_modPickState)   { _exitModPickMode(); return; }
-      if (_ssPickState)    { _exitSsPickMode();  return; }
-      if (_xlPendingPair) { _closePendingPair(); return; }
-      if (_xlPickState)   { _clearPickState(); return; }
-      if (_xlPickMode)    { _toggleXlPickMode(); }
+      if (_modPickState)     { _exitModPickMode();    return; }
+      if (_ssPickState)      { _exitSsPickMode();     return; }
+      if (_xlRowPickState)   { _exitXlRowPickMode();  return; }
+      if (_xlPendingPair)    { _closePendingPair();   return; }
+      if (_xlPickState)      { _clearPickState();     return; }
+      if (_xlPickMode)       { _toggleXlPickMode(); }
     }
   });
   document.getElementById('xl-pick-cancel-btn')?.addEventListener('click', () => {
     _clearPickState();
+    if (_xlRowPickState) _exitXlRowPickMode();
     if (_xlPickMode) _toggleXlPickMode();
   });
 
@@ -143,6 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Start with one protein sequence
   addSequenceCard('protein');
+
+  // Expose internals for automated testing (harmless in production)
+  window._testApi = { populateFromJSON: _populateFromJSON };
 
   // Re-render sequence displays when window is resized
   let _resizeTimer = null;
@@ -260,10 +272,26 @@ export function addSequenceCard(type) {
   card.querySelector('.btn-copy-chain').addEventListener('click', () => {
     const seq = card.querySelector('.seq-textarea')?.value || '';
     addSequenceCard(type);
-    // The new card is the last one — fill in the sequence
+    // The new card is the last one — fill in the sequence / ligand data
     const all  = document.querySelectorAll('#sequences-container .seq-card');
     const copy = all[all.length - 1];
-    if (copy) {
+    if (!copy) return;
+    if (type === 'ligand') {
+      // Copy whichever ligand input tab is active
+      const activePanel = card.querySelector('.ligand-body .tab-panel.active');
+      const panelKey    = activePanel?.dataset.panel || 'ccd';
+      const srcVal      = activePanel?.querySelector('input')?.value || '';
+      if (srcVal) {
+        // Switch copy card to the same tab first
+        const copyTabBtn = copy.querySelector(`.tab-btn[data-tab="${panelKey}"]`);
+        if (copyTabBtn) copyTabBtn.click();
+        const destInput = copy.querySelector(`.ligand-body .tab-panel[data-panel="${panelKey}"] input`);
+        if (destInput) {
+          destInput.value = srcVal;
+          destInput.dispatchEvent(new Event('input'));
+        }
+      }
+    } else {
       const ta = copy.querySelector('.seq-textarea');
       if (ta && seq) {
         ta.value = seq;
@@ -504,6 +532,28 @@ function _wireSeqInputTabs(card, type, id) {
         return;
       }
 
+      // XL pair row pick mode: first click → END1 (chain-a / pos-a), second → END2 + close
+      if (resSpan && _xlRowPickState) {
+        e.stopPropagation();
+        const pos      = parseInt(resSpan.dataset.pos);
+        const chainIds = (display.dataset.chainId || '').split(',').filter(Boolean);
+        if (pos && chainIds.length) {
+          const { row, slot } = _xlRowPickState;
+          const suffix = slot === 'a' ? 'a' : 'b';
+          row.querySelector(`.xl-chain-${suffix}`).value = chainIds[0];
+          row.querySelector(`.xl-pos-${suffix}`).value   = pos;
+          if (slot === 'a') {
+            _xlRowPickState.slot = 'b';
+            const textEl = document.getElementById('xl-pick-banner-text');
+            if (textEl) textEl.textContent = `${chainIds[0]}:${pos} — click second residue (END2)`;
+          } else {
+            _exitXlRowPickMode();
+          }
+          updateViz();
+        }
+        return;
+      }
+
       // Mod residue pick mode: clicking a residue fills the position input
       if (resSpan && _modPickState?.seqId === id) {
         e.stopPropagation();
@@ -585,7 +635,7 @@ function _wireSeqInputTabs(card, type, id) {
         lpanels.forEach(p => { p.style.display = 'none'; p.classList.remove('active'); });
         tab.classList.add('active');
         const panel = card.querySelector(`.ligand-body .tab-panel[data-panel="${tab.dataset.tab}"]`);
-        if (panel) { panel.style.display = 'block'; }
+        if (panel) { panel.style.display = 'block'; panel.classList.add('active'); }
       });
     });
     return;
@@ -748,7 +798,7 @@ function _showFastaSelectModal(entries, targetCard) {
 
   list.innerHTML = entries.map((e, i) => `
     <label class="fasta-select-row">
-      <input type="${isSingle ? 'radio' : 'checkbox'}" name="fasta-seq-pick" value="${i}" ${i === 0 ? 'checked' : ''}>
+      <input type="${isSingle ? 'radio' : 'checkbox'}" name="fasta-seq-pick" value="${i}" checked>
       <span class="fasta-seq-header" title="${e.header || ''}">${e.header || `Sequence ${i + 1}`}</span>
       <span class="fasta-seq-len">${e.seq.length} aa</span>
     </label>
@@ -1082,6 +1132,7 @@ function _updateRuler(card) {
 // ── XL residue pick (click-to-add-XL) ────────────────────────────────────────
 
 function _toggleXlPickMode() {
+  if (_xlRowPickState) _exitXlRowPickMode();
   _xlPickMode = !_xlPickMode;
   const btn      = document.getElementById('selectXlBtn');
   const seqCont  = document.getElementById('sequences-container');
@@ -1356,15 +1407,18 @@ function _addXlPair(card, xlId, defaults = {}) {
     <input type="number" class="xl-pos-b" placeholder="Res" value="${defaults.pos2 || ''}" min="1">
     <span class="xl-pos-warn" style="display:none"></span>
     <span class="xl-chem-warn" style="display:none"></span>
+    <button class="btn-icon xl-row-pick-btn" title="Pick residues by clicking in sequence">${_SS_PICK_SVG}</button>
     <button class="btn-icon btn-remove-pair" title="Remove pair">✕</button>`;
 
   row.querySelector('.btn-remove-pair').addEventListener('click', () => {
+    if (_xlRowPickState?.row === row) _exitXlRowPickMode();
     row.remove();
     // Re-number
     container.querySelectorAll('.pair-num').forEach((el, i) => { el.textContent = i + 1; });
     updateViz();
   });
 
+  row.querySelector('.xl-row-pick-btn').addEventListener('click', () => _toggleXlRowPickMode(row));
   row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', updateViz));
   wireXlPairRowHover(row);
   container.appendChild(row);
@@ -1422,6 +1476,28 @@ function _exitSsPickMode() {
   _ssPickState.row.querySelector('.ss-pick-btn')?.classList.remove('ss-pick-active');
   _ssPickState = null;
   document.querySelectorAll('.seq-card').forEach(card => _updateRuler(card));
+}
+
+function _toggleXlRowPickMode(row) {
+  if (_xlRowPickState?.row === row) { _exitXlRowPickMode(); return; }
+  _exitXlRowPickMode();
+  if (_ssPickState)  _exitSsPickMode();
+  if (_modPickState) _exitModPickMode();
+  if (_xlPickMode)   _toggleXlPickMode();
+  _xlRowPickState = { row, slot: 'a' };
+  row.querySelector('.xl-row-pick-btn')?.classList.add('xl-row-pick-active');
+  document.getElementById('sequences-container')?.classList.add('sequences-xl-pick-active');
+  const textEl = document.getElementById('xl-pick-banner-text');
+  if (textEl) textEl.textContent = 'Click first residue (END1)';
+  document.getElementById('xl-pick-banner')?.classList.add('visible');
+}
+
+function _exitXlRowPickMode() {
+  if (!_xlRowPickState) return;
+  _xlRowPickState.row.querySelector('.xl-row-pick-btn')?.classList.remove('xl-row-pick-active');
+  _xlRowPickState = null;
+  document.getElementById('sequences-container')?.classList.remove('sequences-xl-pick-active');
+  document.getElementById('xl-pick-banner')?.classList.remove('visible');
 }
 
 function _buildSsPickHighlights(seqId) {
@@ -1742,7 +1818,7 @@ function _handleCsvFile(e) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = ev => {
-    openImportModal(ev.target.result, _onCsvImport, file);
+    openImportModal(ev.target.result, _onCsvImport);
   };
   reader.readAsText(file);
   e.target.value = '';  // reset so same file can be re-selected
@@ -2001,6 +2077,23 @@ function _fixAsymmetricXlOrder(jsonObj, chainSeqMap) {
   return notes;
 }
 
+let _hasGeneratedOnce = false;
+
+function _markOutputStale() {
+  if (!_hasGeneratedOnce) return;
+  const banner = document.getElementById('outputStaleBanner');
+  if (banner) banner.style.display = 'flex';
+  const dl = document.getElementById('downloadJsonLink');
+  if (dl) dl.classList.add('stale-action');
+}
+
+function _clearOutputStale() {
+  const banner = document.getElementById('outputStaleBanner');
+  if (banner) banner.style.display = 'none';
+  const dl = document.getElementById('downloadJsonLink');
+  if (dl) dl.classList.remove('stale-action');
+}
+
 function generateJSON() {
   try {
     const output = _buildJSON();
@@ -2023,6 +2116,14 @@ function generateJSON() {
 
     const el = document.getElementById('jsonOutput');
     el.textContent = pretty;
+
+    // Brief flash on re-generate to confirm it ran
+    if (_hasGeneratedOnce) {
+      el.classList.add('output-flash');
+      setTimeout(() => el.classList.remove('output-flash'), 350);
+    }
+    _hasGeneratedOnce = true;
+    _clearOutputStale();
 
     // Show copy + download
     document.getElementById('copyJsonBtn').style.display  = 'inline-block';
@@ -2090,15 +2191,16 @@ function _validateGeneratedJSON(jsonObj) {
         if (!chemOk(seq1, p1, r1)) {
           const aa = seq1[p1 - 1];
           const allowed = r1.filter(r => r !== 'N-term').join(', ');
-          // For asymmetric, this is an error — auto-swap already happened but still incompatible
           const msg = `XL "${xlName}": ${c1}:${aa}${p1} — ${aa} not reactive at END1 position [${allowed}]`;
-          if (!xl.symmetric) errors.push(msg); else warnings.push(msg);
+          errors.push(msg);
         }
         if (!chemOk(seq2, p2, r2)) {
           const aa = seq2[p2 - 1];
           const allowed = r2.filter(r => r !== 'N-term').join(', ');
           const msg = `XL "${xlName}": ${c2}:${aa}${p2} — ${aa} not reactive at END2 position [${allowed}]`;
-          warnings.push(msg); // END2 for asymmetric is often 'any AA'; keep as warning for symmetric
+          // Only error if the crosslinker actually requires a specific residue at END2
+          const isAnyAA = !r2 || r2.includes('any AA');
+          if (isAnyAA) warnings.push(msg); else errors.push(msg);
         }
       }
     });
@@ -2382,9 +2484,11 @@ export function updateViz() {
 
   drawArcDiagram(svg, chains, xlGroups, ssBonds);
   _rewireArcEvents(svg);
-  _updateArcLegend(xlGroups);
+  _updateArcLegend(xlGroups, ssBonds);
   updateXlStats();
   _validateAll();
+  _markOutputStale();
+
 
   // Refresh XL highlights in all visible sequence displays
   document.querySelectorAll('.seq-card').forEach(card => {
@@ -2463,21 +2567,30 @@ function _readSsBondsFromDOM() {
   return bonds;
 }
 
-function _updateArcLegend(xlGroups) {
+function _updateArcLegend(xlGroups, ssBonds) {
   const el = document.getElementById('arc-legend');
   if (!el) return;
-  if (!xlGroups || xlGroups.length < 2) { el.innerHTML = ''; return; }
 
-  const svgNS = 'http://www.w3.org/2000/svg';
-  let html = '<span class="arc-legend-label">Crosslinker groups:</span>';
-  xlGroups.forEach(grp => {
-    const dash = grp.dashArray || 'none';
-    const color = grp.color || '#9aa0a6';
-    const svgLine = `<svg width="36" height="12" style="vertical-align:middle;margin:0 4px 0 2px">` +
-      `<line x1="2" y1="6" x2="34" y2="6" stroke="${color}" stroke-width="2.5"` +
-      (dash !== 'none' ? ` stroke-dasharray="${dash}"` : '') + `/></svg>`;
-    html += `<span class="arc-legend-item">${svgLine}${grp.name || '—'}</span>`;
-  });
+  const hasSS = ssBonds && ssBonds.length > 0;
+  const hasMultiXL = xlGroups && xlGroups.length >= 2;
+  if (!hasSS && !hasMultiXL) { el.innerHTML = ''; return; }
+
+  const _svgLine = (color, dash) =>
+    `<svg width="36" height="12" style="vertical-align:middle;margin:0 4px 0 2px">` +
+    `<line x1="2" y1="6" x2="34" y2="6" stroke="${color}" stroke-width="2.5"` +
+    (dash && dash !== 'none' ? ` stroke-dasharray="${dash}"` : '') + `/></svg>`;
+
+  let html = '';
+  if (hasMultiXL) {
+    html += '<span class="arc-legend-label">Crosslinker groups:</span>';
+    xlGroups.forEach(grp => {
+      html += `<span class="arc-legend-item">${_svgLine(grp.color || '#9aa0a6', grp.dashArray)}${grp.name || '—'}</span>`;
+    });
+  }
+  if (hasSS) {
+    if (html) html += '<span class="arc-legend-sep">·</span>';
+    html += `<span class="arc-legend-item">${_svgLine('#f0b400', '5 3')}Disulfide (S–S)</span>`;
+  }
   el.innerHTML = html;
 }
 
@@ -2910,6 +3023,49 @@ function _checkXlPositions() {
       chemWarn.classList.toggle('is-info', isInfo);
     }
   });
+}
+
+// ─── Reset / clear all ───────────────────────────────────────────────────────
+
+export function resetAll() {
+  if (!confirm('Clear everything and start fresh?')) return;
+
+  // Sequences
+  document.getElementById('sequences-container').innerHTML = '';
+
+  // Crosslinks
+  document.getElementById('crosslinks-container').innerHTML = '';
+
+  // Disulfide bonds
+  document.getElementById('ss-bonds-container').innerHTML = '';
+
+  // Bonded atom pairs
+  document.getElementById('bonds-container').innerHTML = '';
+
+  // Header fields
+  document.getElementById('jobName').value    = '';
+  document.getElementById('modelSeeds').value = '1';
+
+  // JSON output + stale banner
+  document.getElementById('jsonOutput').innerHTML =
+    '<span class="json-placeholder">// Click "Generate JSON" to build output</span>';
+  document.getElementById('copyJsonBtn').style.display    = 'none';
+  document.getElementById('downloadJsonLink').style.display = 'none';
+  const valPanel = document.getElementById('json-validation-panel');
+  if (valPanel) { valPanel.innerHTML = ''; valPanel.style.display = 'none'; }
+  _clearOutputStale();
+  _hasGeneratedOnce = false;
+
+  // Clear localStorage
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(LS_TIME_KEY);
+  const banner = document.getElementById('restoreBanner');
+  if (banner) banner.style.display = 'none';
+
+  // Start fresh with one empty protein card
+  addSequenceCard('protein');
+  _updateSeqCount();
+  updateViz();
 }
 
 // ─── localStorage auto-save / restore ────────────────────────────────────────

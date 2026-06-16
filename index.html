@@ -25,6 +25,7 @@
         </div>
       </div>
       <nav class="header-nav">
+        <button class="btn btn-ghost btn-sm" id="resetBtn" title="Clear everything and start fresh">↺ Reset</button>
         <button class="btn btn-outline btn-sm" id="importBtn">Import JSON</button>
         <a href="https://github.com/KosinskiLab/af3x" target="_blank" rel="noopener"
            class="btn btn-ghost btn-sm">AF3x GitHub ↗</a>
@@ -90,8 +91,12 @@
           <input type="file" id="fasta-import-file-input" accept=".fasta,.fa,.faa,.txt,.seq,.a2m" style="display:none">
           <button class="btn btn-xl-pick btn-sm" id="selectXlBtn" title="Click residues to add crosslink pairs">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
-              <path d="M6.5 9.5a3.182 3.182 0 0 0 4.5 0l2-2a3.182 3.182 0 0 0-4.5-4.5L7.5 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M9.5 6.5a3.182 3.182 0 0 0-4.5 0l-2 2a3.182 3.182 0 0 0 4.5 4.5L8.5 12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              <!-- two residues (filled circles) joined by a crosslinker spacer -->
+              <path d="M3.6 12.4 L1.6 14.4 M2.4 11.2 L0.6 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <path d="M12.4 3.6 L14.4 1.6 M13.6 4.8 L15.4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <line x1="5.1" y1="10.9" x2="10.9" y2="5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              <circle cx="3.6" cy="12.4" r="2.3" fill="currentColor"/>
+              <circle cx="12.4" cy="3.6" r="2.3" fill="currentColor"/>
             </svg>
             Pick XL Residues
           </button>
@@ -129,6 +134,7 @@
         <div id="presets-dropdown" class="dropdown" style="display:none">
           <div id="presets-list"></div>
         </div>
+
       </section>
 
       <!-- Disulfide Bonds -->
@@ -181,7 +187,7 @@
         <button class="btn btn-primary btn-large" id="generateBtn">Generate JSON</button>
 
         <!-- Batch export / Screening -->
-        <details id="batchPanel" class="batch-panel">
+        <details id="batchPanel" class="batch-panel" style="display:none">
           <summary class="batch-summary">Batch export / Screening</summary>
           <div class="batch-body">
 
@@ -255,6 +261,11 @@
               <a id="downloadJsonLink" class="btn btn-outline btn-sm" style="display:none"
                  download="alphafold3_input.json">Download</a>
             </div>
+          </div>
+          <div id="outputStaleBanner" style="display:none">
+            <span class="stale-icon">⚠</span>
+            <span>Inputs changed — regenerate to update the download</span>
+            <button class="stale-regen-btn" onclick="document.getElementById('generateBtn').click()">Regenerate</button>
           </div>
           <pre id="jsonOutput" class="json-output"><span class="json-placeholder">// Click "Generate JSON" to build output</span></pre>
           <div id="json-validation-panel" style="display:none"></div>
@@ -347,12 +358,11 @@
           <li><strong>xiVIEW CSV</strong> — output from xiVIEW. Columns: <code>Protein1, SeqPos1, Protein2, SeqPos2, …</code></li>
         </ul>
         <p>
-          For other search engines (pLink, MeroX, XlinkX, MS Annika, Scout, MaxQuant/MaxLynx…), start the
-          bundled <strong>xkit conversion server</strong> in your conda environment and the importer will
-          convert automatically:
+          For other search engines (pLink, MeroX, XlinkX, MS Annika, Scout, MaxQuant/MaxLynx…), convert
+          your results to xiNET or xiVIEW CSV format yourself first (e.g. with
+          <a href="https://github.com/hgb-bin-proteomics/pyXLMS" target="_blank" rel="noopener">pyXLMS</a>),
+          then import the converted file here.
         </p>
-        <pre class="about-code">conda activate xkit_env
-python xkit_server.py        # starts on http://localhost:5174</pre>
         <p>
           After chain mapping you can review, filter, and confirm which crosslinks to import.
         </p>
@@ -409,36 +419,7 @@ python xkit_server.py        # starts on http://localhost:5174</pre>
 
       <div class="csv-scroll-body">
 
-        <!-- pyXLMS conversion section (shown when format is unknown) -->
-        <div id="csvConversionSection" style="display:none">
-          <div class="csv-section-title">Convert with xkit / pyXLMS</div>
-          <p class="csv-conv-hint">
-            This file format was not recognized as xiNET or xiVIEW.
-            Select the software that generated the file and click <strong>Convert</strong>.
-          </p>
-          <div class="csv-conv-row">
-            <label class="csv-conv-label">Engine</label>
-            <select id="csvEngineSelect">
-              <option value="">— select engine —</option>
-            </select>
-            <label class="csv-conv-label">Crosslinker</label>
-            <input id="csvCrosslinkerInput" type="text" placeholder="e.g. DSS" class="csv-conv-xl-input">
-            <button id="csvConvertBtn" class="btn btn-primary btn-sm" disabled>Convert</button>
-          </div>
-          <div class="csv-server-status" id="csvServerStatus">
-            <span class="server-dot" id="csvServerDot"></span>
-            <span id="csvServerStatusText">Checking for xkit server…</span>
-          </div>
-          <div id="csvServerInstructions" class="csv-server-instructions" style="display:none">
-            Start the conversion server in your xkit conda environment:
-            <code class="csv-conv-code">python xkit_server.py</code>
-            Then click Retry.
-            <button id="csvRetryServer" class="btn btn-ghost btn-sm">Retry</button>
-          </div>
-          <div id="csvConversionError" class="csv-conv-error" style="display:none"></div>
-        </div>
-
-        <!-- Main import content (shown once format is known / conversion done) -->
+        <!-- Main import content (shown once format is recognized as xiNET/xiVIEW) -->
         <div id="csvMainContent" style="display:none">
 
           <!-- Protein → Chain mapping -->

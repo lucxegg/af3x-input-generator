@@ -841,6 +841,13 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   border-radius: var(--radius-sm);
 }
 
+.xl-row-pick-btn { color: var(--text-3); }
+.xl-row-pick-btn.xl-row-pick-active {
+  color: #4285f4;
+  background: rgba(66,133,244,0.15);
+  border-radius: var(--radius-sm);
+}
+
 /* PTM-highlighted residues — same chip style as XL highlights */
 .mod-valid {
   background: var(--mod-color, #34a853);
@@ -1088,15 +1095,19 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 .xl-arc-group:hover .xl-arc,
 .xl-arc-group.xl-arc-group-hover .xl-arc {
-  stroke-width: 3.5 !important;
+  stroke-width: 4 !important;
   opacity: 1 !important;
-  filter: url(#arc-glow);
+  filter: brightness(1.5);
 }
 
 .xl-arc-group:hover .xl-dot,
 .xl-arc-group.xl-arc-group-hover .xl-dot {
-  r: 6;
+  r: 5;
   opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(1.3);
+  filter: brightness(1.3);
 }
 
 /* Floating tooltip */
@@ -1120,6 +1131,10 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   align-items: center;
   gap: 2px;
   white-space: nowrap;
+}
+.arc-legend-sep {
+  color: var(--text-muted);
+  margin: 0 6px;
 }
 
 #arc-tooltip {
@@ -1438,104 +1453,6 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 /* ─── pyXLMS conversion section ─────────────────────────────────────────── */
 
-#csvConversionSection {
-  background: var(--bg-2, #f8f9fa);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 4px;
-}
-
-.csv-conv-hint {
-  font-size: 12px;
-  color: var(--text-2);
-  margin: 0 0 10px;
-  line-height: 1.5;
-}
-
-.csv-conv-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.csv-conv-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-
-#csvEngineSelect {
-  min-width: 155px;
-  flex: 1;
-  max-width: 200px;
-}
-
-.csv-conv-xl-input {
-  width: 90px;
-}
-
-.csv-server-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-2);
-  margin-bottom: 6px;
-}
-
-.server-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.server-dot-checking { background: #f0a500; animation: pulse 1s infinite; }
-.server-dot-ok        { background: #34a853; }
-.server-dot-err       { background: #ea4335; }
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
-}
-
-.csv-server-instructions {
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--bg, #fff);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  line-height: 1.5;
-}
-
-.csv-conv-code {
-  display: inline-block;
-  background: #1e1e2e;
-  color: #cdd6f4;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.csv-conv-error {
-  font-size: 12px;
-  color: #ea4335;
-  background: #fdecea;
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  margin-top: 8px;
-}
-
 /* ─── Batch export / Screening panel ────────────────────────────────────── */
 
 .batch-panel {
@@ -1792,6 +1709,18 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   transition: background 0.08s, color 0.08s;
 }
 
+/* XL pick mode: prominent border on the whole sequences panel */
+#sequences-container.sequences-xl-pick-active {
+  outline: 2px solid #4285f4;
+  outline-offset: 4px;
+  border-radius: 6px;
+  animation: pick-pulse-border 1.5s ease-in-out infinite;
+}
+@keyframes pick-pulse-border {
+  0%, 100% { outline-color: #4285f4; }
+  50%       { outline-color: rgba(66,133,244,0.35); }
+}
+
 /* XL pick mode: all residues zooom on hover for easy targeting */
 .sequences-xl-pick-active .seq-res {
   cursor: pointer;                /* pointer = less visually cluttered than crosshair */
@@ -2037,6 +1966,37 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
 }
 
 /* ─── JSON validation panel ──────────────────────────────────────────────── */
+/* ─── Stale output banner ──────────────────────────────────────────────────── */
+#outputStaleBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  margin-bottom: 8px;
+  background: rgba(250,123,23,.10);
+  border-left: 3px solid #fa7b17;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: #fcc934;
+}
+.stale-icon { font-size: 13px; }
+.stale-regen-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 11px;
+  background: rgba(250,123,23,.18);
+  border: 1px solid rgba(250,123,23,.4);
+  border-radius: var(--radius-sm);
+  color: #fcc934;
+  cursor: pointer;
+}
+.stale-regen-btn:hover { background: rgba(250,123,23,.30); }
+.stale-action { opacity: 0.45; pointer-events: none; }
+
+/* Flash on re-generate */
+@keyframes output-flash { 0%,100% { background: var(--bg-card); } 40% { background: rgba(66,133,244,.12); } }
+.output-flash { animation: output-flash 0.35s ease; }
+
 #json-validation-panel {
   margin-top: 10px;
   border-radius: var(--radius-sm);

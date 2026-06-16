@@ -1,20 +1,16 @@
 /**
- * CSV import module — parses xiVIEW / xiNET crosslink CSVs in the browser,
- * and optionally converts other formats via a local xkit/pyXLMS server.
+ * CSV import module — parses xiVIEW / xiNET crosslink CSVs in the browser.
+ *
+ * Only xiNET and xiVIEW CSV exports are supported. Other search-engine
+ * formats (pLink, MeroX, XlinkX, MS Annika, Scout, MaxQuant/MaxLynx, …)
+ * must be converted to one of these formats by the user beforehand —
+ * no external/local conversion server is contacted.
  *
  * No external libraries required; handles quoted fields and semicolon-
  * delimited ambiguous assignments natively.
  */
 
 import { CROSSLINKERS } from './data.js';
-
-const XKIT_SERVER = 'http://localhost:5174';
-
-// pyXLMS engines (matches xkit/pyxlms_compat.py)
-const PYXLMS_ENGINES = [
-  'Custom', 'MaxQuant', 'MaxLynx', 'MeroX', 'MS Annika',
-  'mzIdentML', 'pLink', 'Scout', 'xiSearch/xiFDR', 'XlinkX',
-];
 
 // ─── CSV parsing ──────────────────────────────────────────────────────────────
 
@@ -173,150 +169,31 @@ let _modalData        = null;  // { format, pairs, proteins, headers }
 let _onImport         = null;  // callback
 let _genericCols      = { col1: '', col2: '' };
 let _fetchedSequences = {};    // protein → sequence string
-let _importFile       = null;  // original File object (for pyXLMS conversion)
 
 // ─── Open modal ───────────────────────────────────────────────────────────────
 
-/**
- * Open the CSV import modal.
- * file = original File object, needed only for pyXLMS conversion.
- */
-export function openImportModal(csvText, onImport, file = null) {
+/** Open the CSV import modal. Only xiNET / xiVIEW CSV exports are accepted. */
+export function openImportModal(csvText, onImport) {
   _onImport = onImport;
-  _importFile = file;
   _genericCols = { col1: '', col2: '' };
 
   const raw = parseCSVFile(csvText);
   if (!raw) { alert('Could not parse the CSV file — is it empty?'); return; }
 
   if (raw.format === 'unknown') {
-    _openConversionUI();
+    alert(
+      'This file format was not recognized as xiNET or xiVIEW.\n\n' +
+      'Only xiNET and xiVIEW CSV exports are supported. If your crosslinks ' +
+      'come from another tool (pLink, MeroX, XlinkX, MS Annika, Scout, ' +
+      'MaxQuant/MaxLynx, …), please convert the file to xiNET or xiVIEW ' +
+      'format yourself first (e.g. via pyXLMS) and re-import it here.'
+    );
     return;
   }
 
   _modalData = raw;
   _showMainContent(raw);
   document.getElementById('csv-modal').style.display = 'flex';
-}
-
-// ─── pyXLMS conversion UI ─────────────────────────────────────────────────────
-
-function _openConversionUI() {
-  // Hide main content, show conversion section
-  document.getElementById('csvMainContent').style.display = 'none';
-  document.getElementById('csvConversionSection').style.display = '';
-  document.getElementById('csvConversionError').style.display = 'none';
-
-  // Populate engine dropdown
-  const sel = document.getElementById('csvEngineSelect');
-  sel.innerHTML = '<option value="">— select engine —</option>';
-  PYXLMS_ENGINES.forEach(e => {
-    const opt = document.createElement('option');
-    opt.value = e;
-    opt.textContent = e;
-    sel.appendChild(opt);
-  });
-
-  // Badge + count
-  document.getElementById('csvFormatBadge').textContent = 'Unknown';
-  document.getElementById('csvTotalCount').textContent = '';
-
-  // Wire controls
-  const convertBtn = document.getElementById('csvConvertBtn');
-  const xlInput    = document.getElementById('csvCrosslinkerInput');
-
-  function _updateConvertBtn() {
-    const ready = sel.value && xlInput.value.trim() && _serverOnline;
-    convertBtn.disabled = !ready;
-  }
-  sel.onchange = _updateConvertBtn;
-  xlInput.oninput = _updateConvertBtn;
-  convertBtn.onclick = _doConvert;
-  document.getElementById('csvRetryServer').onclick = () => _checkServer(_updateConvertBtn);
-
-  document.getElementById('csv-modal').style.display = 'flex';
-
-  // Async server check
-  _serverOnline = false;
-  _checkServer(_updateConvertBtn);
-}
-
-let _serverOnline = false;
-
-async function _checkServer(onDone) {
-  const dot  = document.getElementById('csvServerDot');
-  const text = document.getElementById('csvServerStatusText');
-  const ins  = document.getElementById('csvServerInstructions');
-
-  dot.className  = 'server-dot server-dot-checking';
-  text.textContent = 'Checking for xkit server…';
-  ins.style.display = 'none';
-
-  try {
-    const res = await fetch(`${XKIT_SERVER}/health`, { signal: AbortSignal.timeout(2500) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    _serverOnline = true;
-    dot.className  = 'server-dot server-dot-ok';
-    text.textContent = `xkit server online — ${json.engines ? json.engines.length : '?'} engines available`;
-    ins.style.display = 'none';
-  } catch {
-    _serverOnline = false;
-    dot.className  = 'server-dot server-dot-err';
-    text.textContent = 'xkit server not reachable';
-    ins.style.display = '';
-  }
-  if (onDone) onDone();
-}
-
-async function _doConvert() {
-  const engine      = document.getElementById('csvEngineSelect').value;
-  const crosslinker = document.getElementById('csvCrosslinkerInput').value.trim();
-  const errEl       = document.getElementById('csvConversionError');
-  const btn         = document.getElementById('csvConvertBtn');
-
-  errEl.style.display = 'none';
-  btn.disabled = true;
-  btn.textContent = 'Converting…';
-
-  try {
-    const fd = new FormData();
-    if (_importFile) {
-      fd.append('file', _importFile);
-    } else {
-      // Should not normally happen — file object always passed in
-      throw new Error('Original file object not available. Please re-upload.');
-    }
-    fd.append('engine', engine);
-    fd.append('crosslinker', crosslinker);
-
-    const res = await fetch(`${XKIT_SERVER}/convert`, { method: 'POST', body: fd });
-    const json = await res.json();
-
-    if (!res.ok || json.error) {
-      throw new Error(json.error || `Server error ${res.status}`);
-    }
-
-    // Parse the returned xiVIEW CSV and switch to normal import UI
-    const parsed = parseCSVFile(json.csv);
-    if (!parsed || !parsed.pairs.length) {
-      throw new Error('Conversion returned empty result — check engine and crosslinker name.');
-    }
-
-    _modalData = parsed;
-    document.getElementById('csvConversionSection').style.display = 'none';
-    document.getElementById('csvFormatBadge').textContent =
-      `pyXLMS → xiVIEW (${engine}, ${crosslinker})`;
-    document.getElementById('csvTotalCount').textContent = `${parsed.pairs.length} pairs`;
-    _showMainContent(parsed);
-
-  } catch (e) {
-    errEl.textContent = `Conversion failed: ${e.message}`;
-    errEl.style.display = '';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Convert';
-  }
 }
 
 // ─── Render main import content ───────────────────────────────────────────────
@@ -326,14 +203,10 @@ function _showMainContent(data) {
 
   document.getElementById('csvMainContent').style.display = '';
 
-  // Format badge (only set if not already set by conversion)
-  const badge = document.getElementById('csvFormatBadge');
-  if (!badge.textContent.includes('pyXLMS')) {
-    badge.textContent =
-      format === 'xiview' ? 'xiVIEW (AbsPos)' :
-      format === 'xinet'  ? 'xiNET (LinkPos)'  : 'Generic';
-    document.getElementById('csvTotalCount').textContent = `${pairs.length} pairs found`;
-  }
+  document.getElementById('csvFormatBadge').textContent =
+    format === 'xiview' ? 'xiVIEW (AbsPos)' :
+    format === 'xinet'  ? 'xiNET (LinkPos)'  : 'Generic';
+  document.getElementById('csvTotalCount').textContent = `${pairs.length} pairs found`;
 
   _renderProteinMapping(proteins);
   _renderCsvCrosslinkerSelect();
@@ -601,7 +474,6 @@ export function initImportModal() {
 function _closeModal() {
   document.getElementById('csv-modal').style.display = 'none';
   _modalData = null;
-  _importFile = null;
   _fetchedSequences = {};
 }
 
