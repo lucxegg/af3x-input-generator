@@ -3196,9 +3196,9 @@ const THEME_KEY = 'af3x_theme';
 function _initThemeToggle() {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
-  _applyThemeIcon(document.documentElement.getAttribute('data-theme') || 'light');
+  _applyThemeIcon(document.documentElement.getAttribute('data-theme') || 'dark');
   btn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem(THEME_KEY, next);
