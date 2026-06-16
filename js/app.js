@@ -415,7 +415,10 @@ function _advancedBlock(type, id) {
           <option value="none">None (MSA-free)</option>
         </select>
       </div>
-      <div class="msa-custom-wrap" data-seqid="${id}" style="display:none">
+      <div class="msa-custom-wrap subsection" data-seqid="${id}" style="display:none">
+        <div class="tpl-entry-header">
+          <span class="tpl-entry-title">Custom MSA</span>
+        </div>
         <div class="msa-file-row">
           <span class="msa-file-label">Unpaired</span>
           <input type="text" class="msa-unpaired-path"
@@ -1652,7 +1655,7 @@ function _applyPTM(ptm) {
 
 function _addModRow(container, seqId, ccdCode = '', position = '') {
   const row = document.createElement('div');
-  row.className = 'mod-row';
+  row.className = 'mod-row subsection';
   row.innerHTML = `
     <div class="mod-row-main">
       <input type="text" class="mod-ccd" value="${ccdCode}" placeholder="CCD code (e.g. SEP)"
