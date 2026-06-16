@@ -1,6 +1,14 @@
 /* AF3x Input Generator — stylesheet */
 
 /* ─── Variables ────────────────────────────────────────────────────────────── */
+/* Theme-independent variables (same in light and dark) */
+:root {
+  --radius:         8px;
+  --radius-sm:      4px;
+  --font:           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:      "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
 /* Light theme (opt-in via toggle) */
 html[data-theme="light"] {
   --primary:        #1a73e8;
@@ -36,10 +44,6 @@ html[data-theme="light"] {
 
   --shadow-sm:      0 1px 2px rgba(60,64,67,.15);
   --shadow:         0 2px 6px rgba(60,64,67,.2);
-  --radius:         8px;
-  --radius-sm:      4px;
-  --font:           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono:      "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   color-scheme: light;
 }
 
