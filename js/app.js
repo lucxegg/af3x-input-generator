@@ -76,6 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reset button
   document.getElementById('resetBtn').addEventListener('click', resetAll);
 
+  // Theme toggle
+  _initThemeToggle();
+
 
   // JSON import button
   document.getElementById('importBtn').addEventListener('click', () => {
@@ -1267,6 +1270,10 @@ function _addTemplate(card, seqId) {
   const div = document.createElement('div');
   div.className = 'tpl-entry subsection';
   div.innerHTML = `
+    <div class="tpl-entry-header">
+      <span class="tpl-entry-title">Template ${idx + 1}</span>
+      <button class="btn-icon remove-tpl-btn" title="Remove template">✕</button>
+    </div>
     <div class="field-row">
       <div class="field field-grow">
         <label>mmCIF content</label>
@@ -1286,8 +1293,7 @@ function _addTemplate(card, seqId) {
         <label>Template indices (0-based, comma-separated)</label>
         <input type="text" class="tpl-tpl-idx" placeholder="0,1,2,8">
       </div>
-    </div>
-    <button class="btn btn-danger btn-xs remove-tpl-btn">Remove template</button>`;
+    </div>`;
 
   div.querySelector('.remove-tpl-btn').addEventListener('click', () => div.remove());
   container.appendChild(div);
@@ -3181,4 +3187,28 @@ function _onPdbImport(chains) {
   });
 
   updateViz();
+}
+
+// ─── Theme toggle (light / dark) ───────────────────────────────────────────────
+
+const THEME_KEY = 'af3x_theme';
+
+function _initThemeToggle() {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  _applyThemeIcon(document.documentElement.getAttribute('data-theme') || 'light');
+  btn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    const next = current === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem(THEME_KEY, next);
+    _applyThemeIcon(next);
+  });
+}
+
+function _applyThemeIcon(theme) {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  btn.textContent = theme === 'light' ? '🌙' : '☀️';
+  btn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
 }

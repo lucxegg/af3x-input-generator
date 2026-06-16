@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AF3x Input Generator</title>
+  <script>
+    (function () {
+      var t = localStorage.getItem('af3x_theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
   <link rel="apple-touch-icon" href="assets/favicon-512.png">
@@ -25,6 +31,7 @@
         </div>
       </div>
       <nav class="header-nav">
+        <button class="btn btn-ghost btn-sm" id="themeToggleBtn" title="Toggle light/dark theme">🌙</button>
         <button class="btn btn-ghost btn-sm" id="resetBtn" title="Clear everything and start fresh">↺ Reset</button>
         <button class="btn btn-outline btn-sm" id="importBtn">Import JSON</button>
         <a href="https://github.com/KosinskiLab/af3x" target="_blank" rel="noopener"
@@ -332,7 +339,7 @@
           <strong>Dynamic linkers</strong> (LINK<em>n</em>, RIGID<em>n</em>) are generated on the fly
           with a given chain length; the name in the JSON must include the number (e.g. <code>LINK5</code>).
         </p>
-        <p style="color:var(--text-2);font-size:12px">
+        <p style="color:var(--text-2);font-size: 13px">
           Note: <strong>SDA25A</strong> is available in the <em>experimental</em> AF3x branch only.
           The stable <code>main</code> branch supports SDA, LCSDA, and SDAD but not SDA25A.
         </p>
@@ -454,7 +461,7 @@
           <!-- Selection table -->
           <div>
             <div class="csv-table-header">
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px">
+              <label style="display:flex;align-items:center;gap:6px;font-size: 13px">
                 <input type="checkbox" id="csvSelectAll" checked>
                 Select all
               </label>
