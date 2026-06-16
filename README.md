@@ -88,10 +88,10 @@ python -m http.server 8080
 
 Or use the VS Code Live Server extension.
 
-## Deployment (GitHub Pages)
+## Deployment
 
-1. Push the repository to GitHub
-2. Go to **Settings → Pages → Source: Deploy from branch → main / root**
-3. Site will be available at `https://<username>.github.io/<repo-name>/`
+Live at **https://lucxegg.github.io/af3x-input-generator/**, served via GitHub Pages
+(Settings → Pages → Source: Deploy from branch → `main` / root). Every push to `main`
+redeploys automatically.
 
 To transfer to the KosinskiLab organisation, use **Settings → Transfer ownership**.
