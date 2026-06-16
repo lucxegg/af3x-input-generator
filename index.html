@@ -70,9 +70,9 @@
           <div class="field" style="width:72px">
             <label for="inputVersion">
               Version
-              <span class="label-hint" data-tip="AF3x input format version (1–4)">?</span>
+              <span class="label-hint" data-tip="AF3x input format version — fixed at 2">?</span>
             </label>
-            <input type="number" id="inputVersion" value="2" min="1" max="4">
+            <input type="number" id="inputVersion" value="2" min="2" max="2" disabled>
           </div>
         </div>
       </section>
@@ -165,16 +165,13 @@
           User CCD <span class="optional-tag">optional · expert</span>
         </summary>
         <p class="card-hint">
-          Custom ligand definitions not in the standard CCD.
-          Provide inline mmCIF content <em>or</em> a file path — not both.
+          Custom ligand definitions not in the standard CCD. AF3x only accepts this as inline
+          mmCIF content embedded in the JSON (the <code>userCCD</code> field) — there is no
+          file-path option.
         </p>
-        <div class="field" style="margin-bottom:10px">
+        <div class="field">
           <label for="userCCD">Inline mmCIF content</label>
           <textarea id="userCCD" rows="4" placeholder="Paste mmCIF content here…"></textarea>
-        </div>
-        <div class="field">
-          <label for="userCCDPath">CCD file path (.cif / .cif.gz / .cif.xz / .cif.zst)</label>
-          <input type="text" id="userCCDPath" placeholder="/path/to/custom_ligand.cif">
         </div>
       </details>
 

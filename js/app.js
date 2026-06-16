@@ -1908,7 +1908,7 @@ function _populateFromJSON(json) {
   // Job settings
   document.getElementById('jobName').value      = json.name || '';
   document.getElementById('modelSeeds').value   = (json.modelSeeds || [1]).join(',');
-  document.getElementById('inputVersion').value = json.version || 1;
+  // Version is fixed at 2 — ignore whatever the imported JSON declares.
 
   // Sequences
   (json.sequences || []).forEach(seqObj => {
@@ -2037,8 +2037,7 @@ function _populateFromJSON(json) {
   });
 
   // User CCD
-  document.getElementById('userCCD').value     = json.userCCD || '';
-  document.getElementById('userCCDPath').value  = json.userCCDPath || '';
+  document.getElementById('userCCD').value = json.userCCD || '';
 
   updateViz();
   alert('JSON imported successfully!');
@@ -2257,7 +2256,7 @@ function _showValidationReport(errors, warnings, infos = []) {
 function _buildJSON() {
   const name    = document.getElementById('jobName').value.trim();
   const seedRaw = document.getElementById('modelSeeds').value.trim();
-  const version = parseInt(document.getElementById('inputVersion').value) || 4;
+  const version = 2;  // AF3x input format version is fixed at 2
 
   let seeds;
   if (/^\d+$/.test(seedRaw)) {
@@ -2449,10 +2448,7 @@ function _buildJSON() {
 
   // ── User CCD ────────────────────────────────────────────────────────────────
   const ccdContent = document.getElementById('userCCD')?.value.trim();
-  const ccdPath    = document.getElementById('userCCDPath')?.value.trim();
-  if (ccdContent && ccdPath) throw new Error('Provide User CCD content OR path, not both.');
-  if (ccdContent) output.userCCD     = ccdContent;
-  if (ccdPath)    output.userCCDPath = ccdPath;
+  if (ccdContent) output.userCCD = ccdContent;
 
   return output;
 }

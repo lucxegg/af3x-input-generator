@@ -33,7 +33,7 @@ Built as a pure static site (vanilla HTML/CSS/ES-modules), deployable on GitHub 
 - MSA configuration (unpaired/paired content or file paths)
 - Structural templates (mmCIF content or path + 0-based query/template indices)
 - Bonded atom pairs (covalent bonds for glycans, covalent ligands)
-- User-provided CCD (inline mmCIF or file path)
+- User-provided CCD (inline mmCIF content only — AF3x has no path option for this field)
 
 ### Output
 - **Generate JSON** — validates all fields, produces AF3x-compatible JSON
