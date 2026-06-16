@@ -2,7 +2,7 @@
 
 A browser-based JSON input generator for [AF3x](https://github.com/KosinskiLab/af3x) — the AlphaFold 3 extension for explicit crosslink modelling.
 
-Built as a pure static site (vanilla HTML/CSS/ES-modules), deployable on GitHub Pages with no build step.
+**Live at https://lucxegg.github.io/af3x-input-generator/** — no installation needed, just open the link.
 
 ## Features
 
@@ -61,7 +61,7 @@ After parsing, you can filter by minimum score, exclude decoys, restrict to inte
 ```json
 {
   "dialect": "alphafold3",
-  "version": 1,
+  "version": 2,
   "name": "my_complex",
   "modelSeeds": [1, 2, 3],
   "sequences": [
@@ -76,22 +76,3 @@ After parsing, you can filter by minimum score, exclude decoys, restrict to inte
   ]
 }
 ```
-
-## Local development
-
-Open `index.html` via a local server (required for ES modules):
-
-```bash
-python -m http.server 8080
-# → http://localhost:8080
-```
-
-Or use the VS Code Live Server extension.
-
-## Deployment
-
-Live at **https://lucxegg.github.io/af3x-input-generator/**, served via GitHub Pages
-(Settings → Pages → Source: Deploy from branch → `main` / root). Every push to `main`
-redeploys automatically.
-
-To transfer to the KosinskiLab organisation, use **Settings → Transfer ownership**.
