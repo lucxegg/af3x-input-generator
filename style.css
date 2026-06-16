@@ -799,14 +799,30 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .no-tpl-label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-3);
+  font-weight: 600;
+  color: var(--text-2);
   cursor: pointer;
   user-select: none;
+  padding: 4px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-subtle);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-.no-tpl-label input[type="checkbox"] { cursor: pointer; }
+.no-tpl-label:hover { border-color: var(--text-3); }
+.no-tpl-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--danger);
+}
+.no-tpl-label:has(input:checked) {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 .btn-copy-chain {
   display: flex;
