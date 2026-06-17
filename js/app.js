@@ -401,7 +401,7 @@ function _advancedBlock(type, id) {
         <span>Modifications
           <span class="label-hint" data-tip="Post-translational modifications (e.g. phosphorylation, methylation) or RNA/DNA base modifications applied at a specific residue position. Click ⋯ on a row to search by name or CCD code.">?</span>
         </span>
-        <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add</button>
+        <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add modification</button>
       </div>
       <div class="mods-container" data-seqid="${id}"></div>
     </div>`;
@@ -428,7 +428,7 @@ function _advancedBlock(type, id) {
           <input type="text" class="msa-unpaired-path"
                  placeholder="/path/to/MSAs_A_unpaired.a3m" data-seqid="${id}">
           <label class="btn btn-ghost btn-xs msa-upload-label" title="Upload .a3m file — content is embedded inline in JSON">
-            Upload <input type="file" class="msa-unpaired-file" accept=".a3m,.txt" data-seqid="${id}" style="display:none">
+            Upload MSA file <input type="file" class="msa-unpaired-file" accept=".a3m,.txt" data-seqid="${id}" style="display:none">
           </label>
           <textarea class="msa-unpaired-content" style="display:none" data-seqid="${id}"></textarea>
         </div>
@@ -438,7 +438,7 @@ function _advancedBlock(type, id) {
           <input type="text" class="msa-paired-path"
                  placeholder="/path/to/MSAs_A_paired.a3m" data-seqid="${id}">
           <label class="btn btn-ghost btn-xs msa-upload-label" title="Upload .a3m file — content is embedded inline in JSON">
-            Upload <input type="file" class="msa-paired-file" accept=".a3m,.txt" data-seqid="${id}" style="display:none">
+            Upload MSA file <input type="file" class="msa-paired-file" accept=".a3m,.txt" data-seqid="${id}" style="display:none">
           </label>
           <textarea class="msa-paired-content" style="display:none" data-seqid="${id}"></textarea>
         </div>` : ''}
