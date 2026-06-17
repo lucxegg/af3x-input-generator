@@ -398,7 +398,9 @@ function _advancedBlock(type, id) {
   const modSection = `
     <div class="adv-section">
       <div class="adv-section-header">
-        <span>Modifications</span>
+        <span>Modifications
+          <span class="label-hint" data-tip="Post-translational modifications (e.g. phosphorylation, methylation) or RNA/DNA base modifications applied at a specific residue position. Click ⋯ on a row to search by name or CCD code.">?</span>
+        </span>
         <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add</button>
       </div>
       <div class="mods-container" data-seqid="${id}"></div>
@@ -408,11 +410,13 @@ function _advancedBlock(type, id) {
   const msaSection = type === 'dna' ? '' : `
     <div class="adv-section">
       <div class="adv-section-header">
-        <span>MSA</span>
+        <span>MSA
+          <span class="label-hint" data-tip="Multiple Sequence Alignment — homologous sequences AF3 uses for coevolution signal. Auto: AF3 searches and builds it for you (recommended default). Custom: supply your own pre-computed .a3m file(s). None: skip MSA entirely (faster, but usually lower accuracy — mainly useful for orphan sequences or speed tests).">?</span>
+        </span>
         <select class="msa-mode-sel" data-seqid="${id}">
-          <option value="auto">Auto (AF3 generates)</option>
-          <option value="custom">Custom .a3m files</option>
-          <option value="none">None (MSA-free)</option>
+          <option value="auto" title="AF3 searches sequence databases and builds the MSA automatically — recommended default">Auto (AF3 generates)</option>
+          <option value="custom" title="Provide your own pre-computed .a3m file(s) instead of letting AF3 search">Custom .a3m files</option>
+          <option value="none" title="Skip MSA entirely — faster but usually lower accuracy; mainly for orphan sequences or speed tests">None (MSA-free)</option>
         </select>
       </div>
       <div class="msa-custom-wrap subsection" data-seqid="${id}" style="display:none">
@@ -447,7 +451,9 @@ function _advancedBlock(type, id) {
   const tplSection = type === 'protein' ? `
     <div class="adv-section">
       <div class="adv-section-header">
-        <span>Structural Templates</span>
+        <span>Structural Templates
+          <span class="label-hint" data-tip="Known structures of homologous proteins AF3 can use to guide folding. Leave empty for AF3 to search automatically, add specific ones manually, or check 'Without templates' to disable template search for this chain entirely.">?</span>
+        </span>
         <label class="no-tpl-label" title="Output templates:[] — disables AF3 template search for this chain">
           <input type="checkbox" class="no-templates-check" data-seqid="${id}">
           Without templates
