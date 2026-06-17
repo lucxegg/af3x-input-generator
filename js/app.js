@@ -79,6 +79,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Theme toggle
   _initThemeToggle();
 
+  // Global tooltips for .label-hint "?" icons (event delegation — covers dynamically added ones)
+  _initLabelHints();
+
 
   // JSON import button
   document.getElementById('importBtn').addEventListener('click', () => {
@@ -3258,4 +3261,45 @@ function _applyThemeIcon(theme) {
   if (!btn) return;
   btn.textContent = theme === 'light' ? '🌙' : '☀️';
   btn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+}
+
+// ─── Global tooltips for .label-hint "?" icons ─────────────────────────────────
+// Rendered into a single fixed-position element appended to <body> so they are
+// never clipped by ancestors with overflow:hidden (e.g. .seq-card). Uses event
+// delegation so it also works for hints added dynamically later (templates, mods).
+
+function _initLabelHints() {
+  const tip = document.getElementById('global-tooltip');
+  if (!tip) return;
+
+  document.addEventListener('mouseover', (e) => {
+    const hint = e.target.closest('.label-hint[data-tip]');
+    if (!hint) return;
+    tip.textContent = hint.dataset.tip;
+    tip.classList.add('visible');
+    _positionLabelTooltip(hint, tip);
+  });
+
+  document.addEventListener('mouseout', (e) => {
+    const hint = e.target.closest('.label-hint[data-tip]');
+    if (!hint) return;
+    tip.classList.remove('visible');
+  });
+
+  window.addEventListener('scroll', () => tip.classList.remove('visible'), true);
+}
+
+function _positionLabelTooltip(hint, tip) {
+  const r = hint.getBoundingClientRect();
+  // Measure with visible width (max-width applies once content is set)
+  const tipRect = tip.getBoundingClientRect();
+  let left = r.left + r.width / 2 - tipRect.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tipRect.width - 8));
+
+  const spaceAbove = r.top;
+  const showBelow  = spaceAbove < tipRect.height + 12;
+  const top = showBelow ? r.bottom + 7 : r.top - tipRect.height - 7;
+
+  tip.style.left = `${left}px`;
+  tip.style.top  = `${top}px`;
 }

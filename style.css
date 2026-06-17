@@ -495,33 +495,30 @@ label {
   margin-left: 4px;
   position: relative;
 }
-.label-hint[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: 50%;
-  transform: translateX(-50%);
+
+/* Global tooltip — rendered in a fixed-position element outside any
+   overflow:hidden ancestor (e.g. .seq-card), positioned via JS. */
+.global-tooltip {
+  position: fixed;
   background: var(--bg-subtle);
   color: var(--text);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.4;
-  padding: 5px 9px;
+  padding: 6px 10px;
   border-radius: 5px;
   border: 1px solid var(--border);
   box-shadow: 0 3px 10px rgba(0,0,0,0.25);
   white-space: normal;
   width: max-content;
-  max-width: 240px;
+  max-width: 260px;
   text-align: left;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s;
-  z-index: 200;
+  z-index: 9000;
 }
-.label-hint[data-tip]:hover::after {
-  opacity: 1;
-}
+.global-tooltip.visible { opacity: 1; }
 
 input[type="text"],
 input[type="number"],
