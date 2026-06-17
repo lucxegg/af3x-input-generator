@@ -1302,9 +1302,47 @@ function _addTemplate(card, seqId) {
         <label>Template indices (0-based, comma-separated)</label>
         <input type="text" class="tpl-tpl-idx" placeholder="0,1,2,8">
       </div>
+    </div>
+    <div class="tpl-mapping-upload-row">
+      <label class="btn btn-ghost btn-xs msa-upload-label"
+             title="Upload a 2-column CSV/TSV file (query_index,template_index per line) to fill both index fields — this is a local convenience, not an AF3x JSON field">
+        Upload mapping file
+        <input type="file" class="tpl-mapping-file" accept=".csv,.tsv,.txt" style="display:none">
+      </label>
+      <span class="adv-hint tpl-mapping-hint">2 columns: query_index,template_index (one pair per line, 0-based)</span>
     </div>`;
 
   div.querySelector('.remove-tpl-btn').addEventListener('click', () => div.remove());
+
+  div.querySelector('.tpl-mapping-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const queries = [];
+      const templates = [];
+      ev.target.result.split(/\r?\n/).forEach(line => {
+        line = line.trim();
+        if (!line) return;
+        const cols = line.split(/[,\t]/).map(s => s.trim());
+        if (cols.length < 2) return;
+        const q = parseInt(cols[0]);
+        const t = parseInt(cols[1]);
+        if (Number.isNaN(q) || Number.isNaN(t)) return; // skip header / bad rows
+        queries.push(q);
+        templates.push(t);
+      });
+      if (!queries.length) {
+        alert('Could not find any valid "query_index,template_index" rows in this file.');
+        return;
+      }
+      div.querySelector('.tpl-query-idx').value = queries.join(',');
+      div.querySelector('.tpl-tpl-idx').value   = templates.join(',');
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
   container.appendChild(div);
 }
 
