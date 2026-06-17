@@ -722,23 +722,33 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   background: var(--bg-subtle);
 }
 .seq-advanced > summary {
-  padding: 7px 14px;
+  padding: 10px 14px;
   cursor: pointer;
   list-style: none;
-  color: var(--text-3);
-  font-size: 12px;
-  letter-spacing: 0.3px;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  transition: background 0.12s;
 }
+.seq-advanced > summary:hover { background: var(--primary-light); }
 .seq-advanced > summary::-webkit-details-marker { display: none; }
 .seq-advanced > summary::before {
   content: '▶';
   font-size: 10px;
-  margin-right: 6px;
-  color: var(--text-3);
+  margin-right: 7px;
+  color: var(--primary);
   display: inline-block;
   transition: transform 0.15s;
 }
 .seq-advanced[open] > summary::before { transform: rotate(90deg); }
+.seq-advanced[open] > summary { border-bottom: 1px solid var(--border); }
+.seq-advanced-sub {
+  color: var(--text-3);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0;
+}
 .seq-advanced > *:not(summary) { padding: 8px 14px 14px; }
 
 /* Input mode tabs */

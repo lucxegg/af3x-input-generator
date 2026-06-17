@@ -267,7 +267,7 @@ export function addSequenceCard(type) {
     </div>
 
     <details class="seq-advanced">
-      <summary>Advanced options</summary>
+      <summary>Advanced options <span class="seq-advanced-sub">${_advancedSubLabel(type)}</span></summary>
       ${_advancedBlock(type, id)}
     </details>
   `;
@@ -393,6 +393,13 @@ function _sequenceInputBlock(type, id) {
         <div class="uniprot-status" data-seqid="${id}"></div>
       </div>` : ''}
     </div>`;
+}
+
+function _advancedSubLabel(type) {
+  if (type === 'ligand') return '';
+  if (type === 'dna')    return '— Modifications';
+  if (type === 'rna')    return '— Modifications, MSA';
+  return '— Modifications, MSA, Templates';
 }
 
 function _advancedBlock(type, id) {
