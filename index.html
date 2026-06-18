@@ -63,32 +63,32 @@
         <button class="btn btn-ghost btn-sm" id="introCollapseBtn">Hide details ▾</button>
       </div>
       <p class="intro-banner-subtitle">
-        This tool builds AF3x JSON inputs for crosslink-aware AlphaFold 3 structure prediction.
-        Every section below gives you more than one way to enter your data — pick whichever is
-        fastest for you.
+        This tool builds AF3x <strong>JSON</strong> inputs for crosslink-aware AlphaFold 3
+        structure prediction. Every section below gives you more than one way to enter your
+        data — pick whichever is fastest for you.
       </p>
       <div class="intro-banner-body" id="introBannerBody">
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--primary)">Sequences</span>
-          <p>Type or paste a sequence directly, upload a FASTA file, fetch it automatically by
-            <strong>UniProt ID</strong>, or import chains and ligands straight out of a PDB/mmCIF
-            structure file.</p>
+          <p>Type or paste a sequence directly, upload a <strong>FASTA</strong> file, fetch it
+            automatically by <strong>UniProt ID</strong>, or import chains and ligands straight
+            out of a <strong>PDB</strong>/<strong>mmCIF</strong> structure file.</p>
         </div>
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--info-blue)">Crosslinks</span>
-          <p>Type chain and residue numbers directly, click the pick icon to set positions by
-            clicking residues in the sequence, or import an existing <strong>xiNET</strong> or
-            <strong>xiVIEW</strong> CSV result.</p>
+          <p>Type chain and residue numbers directly, <strong>click the pick icon</strong> to set
+            positions by clicking residues in the sequence, or import an existing
+            <strong>xiNET</strong> or <strong>xiVIEW</strong> CSV result.</p>
         </div>
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--accent-gold)">Disulfide Bonds</span>
-          <p>Type cysteine pairs directly, or click the pick icon to set both residues by clicking
-            cysteines in the sequence.</p>
+          <p>Type cysteine pairs directly, or <strong>click the pick icon</strong> to set both
+            residues by clicking cysteines in the sequence.</p>
         </div>
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--success)">Modifications</span>
-          <p>Search more than 50 post-translational modifications by name or CCD code, then click
-            a residue to set the position.</p>
+          <p>Search more than 50 post-translational modifications by name or
+            <strong>CCD code</strong>, then click a residue to set the position.</p>
         </div>
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--accent-orange)">MSA</span>
@@ -98,12 +98,13 @@
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--danger)">Structural Templates</span>
           <p>Add custom templates manually — the query/template residue mapping can even be
-            suggested automatically by uploading a PDB or mmCIF file.</p>
+            suggested automatically by uploading a <strong>PDB</strong> or
+            <strong>mmCIF</strong> file.</p>
         </div>
         <div class="intro-row">
           <span class="intro-tag" style="--tag-color:var(--text-3)">Output</span>
-          <p>Generate, copy, or download the finished JSON, or re-import an existing AF3x JSON
-            file to keep editing it.</p>
+          <p>Generate, copy, or download the finished <strong>JSON</strong>, or re-import an
+            existing AF3x <strong>JSON</strong> file to keep editing it.</p>
         </div>
       </div>
     </div>
@@ -157,10 +158,11 @@
           </button>
         </div>
         <p class="card-hint">
-          Add a chain by typing/pasting a sequence, uploading a FASTA file, or fetching it by
-          <strong>UniProt ID</strong>. <strong>Import PDB / mmCIF</strong> reads chains (and
-          ligands) directly out of a structure file. Use <strong>Pick XL Residues</strong> to set
-          crosslink positions by clicking residues below instead of typing numbers.
+          Add a chain by typing/pasting a sequence, uploading a <strong>FASTA</strong> file, or
+          fetching it by <strong>UniProt ID</strong>. <strong>Import PDB / mmCIF</strong> reads
+          chains (and ligands) directly out of a structure file. Use
+          <strong>Pick XL Residues</strong> to set crosslink positions by clicking residues below
+          instead of typing numbers.
         </p>
         <div id="sequences-container"></div>
         <div class="add-entity-row">
@@ -185,7 +187,7 @@
         </div>
         <p class="card-hint">
           Model crosslinker molecules explicitly between residue pairs. Indices are 1-based.
-          Type chain + residue directly, click the pick icon on a row (or
+          Type chain + residue directly, <strong>click the pick icon</strong> on a row (or
           <strong>Pick XL Residues</strong> above) to set positions by clicking residues in the
           sequence, or <strong>Import xiNET/xiVIEW CSV</strong> to load pairs from an existing
           XL-MS result — that import also offers to fetch sequences for the linked proteins by
@@ -214,8 +216,9 @@
         </div>
         <p class="card-hint">
           Cysteine pairs for disulfide bonds. AF3x models these by mutating Cys→Ala and
-          adding an S–S covalent ligand between them. Type positions directly, or click the
-          pick icon on a row to set both residues by clicking cysteines in the sequence.
+          adding an S–S covalent ligand between them. Type positions directly, or
+          <strong>click the pick icon</strong> on a row to set both residues by clicking
+          cysteines in the sequence.
         </p>
         <div id="ss-bonds-container"></div>
       </section>
@@ -327,6 +330,7 @@
           <div class="card-header-row output-header">
             <h2 class="card-title">JSON Output</h2>
             <div class="output-actions">
+              <button class="btn btn-ghost btn-sm" id="expandJsonBtn" style="display:none" title="Open larger view">⤢ Expand</button>
               <button class="btn btn-ghost btn-sm" id="copyJsonBtn" style="display:none">Copy</button>
               <a id="downloadJsonLink" class="btn btn-outline btn-sm" style="display:none"
                  download="alphafold3_input.json">Download</a>
@@ -362,8 +366,10 @@
           to guide structure prediction.
         </p>
         <p>
-          This tool generates the JSON input files required by AF3x. It handles sequences, crosslinker
-          molecules, disulfide bonds, PTMs, covalent ligand bonds, and batch export for screening.
+          This tool generates the JSON input files required by AF3x. It handles sequences,
+          crosslinker molecules, disulfide bonds, post-translational modifications, custom
+          <strong>MSA</strong> and <strong>structural templates</strong>, covalent ligand bonds,
+          a user-provided CCD, and batch export for screening.
         </p>
       </section>
 
@@ -382,7 +388,9 @@
             in the sequence view. One residue position may only appear in one crosslink pair per crosslinker group.
           </li>
           <li>
-            <strong>Optional constraints</strong> — add disulfide bonds, PTMs, or bonded atom pairs as needed.
+            <strong>Optional constraints</strong> — add disulfide bonds, modifications (PTMs), or
+            bonded atom pairs as needed. Open <em>Advanced options</em> on a chain for MSA and
+            structural templates.
           </li>
           <li>
             <strong>Set seeds</strong> — enter a number <em>N</em> to generate seeds 1…N, or enter them
@@ -397,6 +405,41 @@
             per crosslink pair, or random subsets of crosslinks across many jobs.
           </li>
         </ol>
+      </section>
+
+      <!-- MSA & Templates -->
+      <section class="about-section">
+        <h2>MSA &amp; Structural Templates</h2>
+        <p>
+          Both live under <em>Advanced options</em> on a protein/RNA chain. By default AF3
+          searches for both automatically — you only need to touch these if you want something
+          different.
+        </p>
+        <ul class="about-list">
+          <li><strong>Without MSA</strong> — skip MSA search entirely for this chain
+            (<code>unpairedMsa</code>/<code>pairedMsa</code> set to <code>""</code>). Faster, but
+            usually lower accuracy.</li>
+          <li><strong>+ Add custom MSA</strong> — supply your own pre-computed
+            <code>.a3m</code> file(s) (paste, type a cluster path, or upload) instead of letting
+            AF3 search.</li>
+          <li><strong>Without templates</strong> — disable template search for this chain
+            (<code>templates: []</code>).</li>
+          <li><strong>+ Add template</strong> — supply a single-chain <strong>PDB</strong> or
+            <strong>mmCIF</strong> structure (content, path, or upload — PDB is converted to mmCIF
+            automatically) plus a 0-based residue mapping between your sequence and the
+            template.</li>
+          <li><strong>Align with sequence &amp; suggest indices</strong> — pasting or uploading a
+            structure for a template automatically runs a sequence alignment against it and
+            suggests the query/template index mapping for you to review and apply. This is a
+            convenience built into this tool — AF3x itself has no alignment tool, only the JSON
+            schema, so always check the suggested mapping before trusting it.</li>
+        </ul>
+        <p>
+          <strong>Important AF3x rule:</strong> if a chain has custom templates, MSA can no longer
+          be left on Auto for that chain — it must also be explicit (either <em>Without MSA</em> or
+          a custom MSA). This tool warns you and blocks JSON generation if you forget; AF3x itself
+          would otherwise reject the whole job with a "templates set only partially" error.
+        </p>
       </section>
 
       <!-- Supported crosslinkers -->
@@ -448,6 +491,9 @@
           <li><strong>SASD vs Euclidean distance</strong> — the max-distance threshold in each crosslinker preset is a solvent-accessible surface distance (SASD). The Euclidean CB–CB distance is always shorter; a pair passing the Euclidean check may still fail SASD if the path goes around an interface.</li>
           <li><strong>Seeds</strong> — AF3x uses model seeds to generate diverse structural models. A single seed produces one model; using 5 seeds gives an ensemble for picking the best-ranked prediction.</li>
           <li><strong>Version field</strong> — the AF3x input format version, fixed at 4 (the current schema version).</li>
+          <li><strong>Description field</strong> — a free-text comment per chain (under <em>Advanced options</em>). Purely cosmetic, not used by AF3x for prediction — leave blank unless you want a label in the JSON.</li>
+          <li><strong>User CCD</strong> — for custom ligand definitions not in the standard CCD. Provide inline mmCIF content <em>or</em> a file path, not both.</li>
+          <li><strong>Did the template actually get used?</strong> AF3x accepting a template (skipping its own search) doesn't guarantee the predicted structure closely matches it — templates are a soft signal, not a hard constraint. To check: (1) look for "Skipping MSA and template search… because it already has templates" in the AF3x log, and (2) for a stronger check, run the same job again with <em>Without templates</em> and compare pLDDT/confidence between the two runs, or structurally align the predicted model against the template mmCIF.</li>
         </ul>
       </section>
 
@@ -618,6 +664,24 @@
         </div>
       </div>
       <svg id="topology-expand-svg" class="topo-expand-svg"></svg>
+    </div>
+  </div>
+
+  <!-- JSON output expand modal -->
+  <div id="json-modal" class="topo-modal-overlay" style="display:none" tabindex="-1">
+    <div class="topo-modal-inner">
+      <div class="topo-modal-header">
+        <div class="topo-modal-title-row">
+          <h2 class="topo-modal-title">JSON Output</h2>
+          <span class="topo-modal-hint">Read-only — edit the form and regenerate instead</span>
+        </div>
+        <div class="topo-modal-actions">
+          <button id="jsonModalCopy" class="btn btn-outline btn-sm">Copy</button>
+          <button id="jsonModalClose" class="btn btn-ghost btn-sm"
+                  onclick="document.getElementById('json-modal').style.display='none'">✕</button>
+        </div>
+      </div>
+      <pre id="jsonOutputExpanded" class="json-output json-output-expanded"></pre>
     </div>
   </div>
 

@@ -65,6 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Generate + copy + download
   document.getElementById('generateBtn').addEventListener('click', generateJSON);
   document.getElementById('copyJsonBtn').addEventListener('click', _copyJSON);
+  document.getElementById('expandJsonBtn').addEventListener('click', () => {
+    document.getElementById('jsonOutputExpanded').textContent = document.getElementById('jsonOutput').textContent;
+    document.getElementById('json-modal').style.display = 'flex';
+  });
+  document.getElementById('jsonModalCopy').addEventListener('click', _copyJSON);
 
   // Batch export
   document.getElementById('batchSingleBtn').addEventListener('click', _batchSingleXL);
@@ -1131,12 +1136,15 @@ function _autoValidateSeq(ta, type) {
 function _calcSeqLineLen(container) {
   const w = container.clientWidth;
   if (!w) return 60;
-  // JetBrains Mono 12px ≈ 7.22px per char; 24px padding; 8 chars for "     1  "
-  const charW     = 7.22;
-  const padChars  = Math.round(24 / charW);
-  const posChars  = 8;  // "     1  "
-  const sepChars  = 2;  // 2 spaces between groups of 10
-  const available = Math.floor(w / charW) - padChars - posChars;
+  // JetBrains Mono 13px ≈ 7.82px per char; 24px padding; 8 chars for "     1  ".
+  // A couple of safety chars are subtracted on top — better to under-fill a
+  // row slightly than to overflow by a few px and trigger horizontal scroll.
+  const charW      = 7.82;
+  const padChars   = Math.round(24 / charW);
+  const posChars   = 8;  // "     1  "
+  const sepChars   = 2;  // 2 spaces between groups of 10
+  const safetyChars = 3;
+  const available  = Math.floor(w / charW) - padChars - posChars - safetyChars;
   // Each full group costs 10 chars + 2 spaces separator (except last)
   // Approximate: available / (10 + sepChars) groups
   const groups = Math.max(1, Math.floor(available / (10 + sepChars)));
@@ -2513,7 +2521,8 @@ function generateJSON() {
     _hasGeneratedOnce = true;
     _clearOutputStale();
 
-    // Show copy + download
+    // Show expand + copy + download
+    document.getElementById('expandJsonBtn').style.display = 'inline-block';
     document.getElementById('copyJsonBtn').style.display  = 'inline-block';
     const dl = document.getElementById('downloadJsonLink');
     dl.href     = 'data:application/json;charset=utf-8,' + encodeURIComponent(pretty);
@@ -2859,11 +2868,11 @@ function _buildJSON() {
 
 // ─── Copy JSON ────────────────────────────────────────────────────────────────
 
-function _copyJSON() {
+function _copyJSON(e) {
   const text = document.getElementById('jsonOutput').textContent;
   if (!text || text.startsWith('//')) return;
   navigator.clipboard.writeText(text).then(() => {
-    const btn = document.getElementById('copyJsonBtn');
+    const btn = e?.currentTarget || document.getElementById('copyJsonBtn');
     const orig = btn.textContent;
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = orig; }, 1500);
@@ -3449,6 +3458,7 @@ export function resetAll() {
   // JSON output + stale banner
   document.getElementById('jsonOutput').innerHTML =
     '<span class="json-placeholder">// Click "Generate JSON" to build output</span>';
+  document.getElementById('expandJsonBtn').style.display  = 'none';
   document.getElementById('copyJsonBtn').style.display    = 'none';
   document.getElementById('downloadJsonLink').style.display = 'none';
   const valPanel = document.getElementById('json-validation-panel');
