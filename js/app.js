@@ -5,10 +5,10 @@
  * PTM picker, JSON generation, JSON import, and coordinates the arc diagram.
  */
 
-import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, CHAIN_COLORS, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
+import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, chainColorForType, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 import { drawArcDiagram } from './viz.js';
 import { openImportModal, initImportModal, _shortProteinName } from './csv_import.js';
-import { openPdbModal, initPdbModal } from './pdb_import.js';
+import { openPdbModal, initPdbModal, extractAtomSequences, isMmcifText, pdbToMmcif } from './pdb_import.js';
 import { updateXlStats } from './xl_stats.js';
 import { openInteractiveTopology, initInteractiveTopology, resetTopologyView } from './topology_interactive.js';
 
@@ -78,6 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Theme toggle
   _initThemeToggle();
+
+  // Intro / overview banner
+  _initIntroBanner();
+
+  // User CCD: content vs path are mutually exclusive
+  _initUserCcdExclusivity();
 
   // Global tooltips for .label-hint "?" icons (event delegation — covers dynamically added ones)
   _initLabelHints();
@@ -222,16 +228,22 @@ function _buildAboutXlTable() {
 
 // ─── Sequence Cards ───────────────────────────────────────────────────────────
 
+// Per-type counters so chains of the same type cycle through that type's own
+// colour family (see chainColorForType in data.js) instead of a single global rotation.
+const _typeColorCounters = { protein: 0, rna: 0, dna: 0, ligand: 0 };
+
 export function addSequenceCard(type) {
   _seqCounter++;
-  const id       = `seq_${_seqCounter}`;
-  const colorIdx = (_seqCounter - 1) % CHAIN_COLORS.length;
-  const color    = CHAIN_COLORS[colorIdx];
+  const id = `seq_${_seqCounter}`;
+
+  const typeIdx = _typeColorCounters[type] ?? 0;
+  _typeColorCounters[type] = typeIdx + 1;
+  const color = chainColorForType(type, typeIdx);
 
   const card = document.createElement('div');
   card.className  = 'seq-card';
   card.dataset.id = id;
-  card.dataset.colorIdx = colorIdx;
+  card.dataset.color = color;
   card.style.setProperty('--chain-color', color);
 
   card.innerHTML = `
@@ -267,7 +279,7 @@ export function addSequenceCard(type) {
     </div>
 
     <details class="seq-advanced">
-      <summary>Advanced options <span class="seq-advanced-sub">${_advancedSubLabel(type)}</span></summary>
+      <summary>Advanced options <span class="seq-advanced-sub" data-seqid="${id}">${_advancedSubLabel(type)}</span></summary>
       ${_advancedBlock(type, id)}
     </details>
   `;
@@ -318,6 +330,7 @@ export function addSequenceCard(type) {
   document.getElementById('sequences-container').appendChild(card);
   _updateSeqCount();
   updateViz();
+  _updateAdvancedSummary(id);
 }
 
 function _typeLabel(type) {
@@ -397,13 +410,67 @@ function _sequenceInputBlock(type, id) {
 
 function _advancedSubLabel(type) {
   if (type === 'ligand') return '';
-  if (type === 'dna')    return '— Modifications';
-  if (type === 'rna')    return '— Modifications, MSA';
-  return '— Modifications, MSA, Templates';
+  if (type === 'dna')    return '— Mods: 0';
+  if (type === 'rna')    return '— Mods: 0 · MSA: Auto';
+  return '— Mods: 0 · MSA: Auto · Templates: 0';
+}
+
+const _MSA_MODE_LABELS = { auto: 'Auto', custom: 'Custom', none: 'None' };
+
+/** Returns 'none' | 'custom' | 'auto' for a chain's MSA, derived from actual
+ *  field state (within the given seq-card) rather than a UI mode toggle. */
+function _getMsaMode(card) {
+  if (card.querySelector('.no-msa-check')?.checked) return 'none';
+  const hasValue = sel => [...card.querySelectorAll(sel)].some(el => el.value.trim());
+  const hasCustom =
+    hasValue('.msa-unpaired-path, .msa-unpaired-content') ||
+    hasValue('.msa-paired-path, .msa-paired-content');
+  return hasCustom ? 'custom' : 'auto';
+}
+
+/** Updates the live "— Mods: N · MSA: X · Templates: N" summary shown next to
+ *  "Advanced options" so users can see what's configured without expanding it. */
+function _updateAdvancedSummary(seqId) {
+  const card  = document.querySelector(`.seq-card[data-id="${seqId}"]`);
+  const subEl = card?.querySelector('.seq-advanced-sub');
+  if (!subEl) return;
+
+  const parts = [];
+
+  const modsCount = card.querySelectorAll(`.mods-container[data-seqid="${seqId}"] .mod-row`).length;
+  parts.push(`Mods: ${modsCount}`);
+
+  if (card.querySelector(`.no-msa-check[data-seqid="${seqId}"]`)) {
+    parts.push(`MSA: ${_MSA_MODE_LABELS[_getMsaMode(card)]}`);
+  }
+
+  const tplContainer = card.querySelector(`.tpl-container[data-seqid="${seqId}"]`);
+  let hasTemplates = false;
+  if (tplContainer) {
+    const noTpl = card.querySelector('.no-templates-check')?.checked;
+    hasTemplates = !noTpl && tplContainer.querySelectorAll('.tpl-entry').length > 0;
+    parts.push(noTpl ? 'Templates: off' : `Templates: ${tplContainer.querySelectorAll('.tpl-entry').length}`);
+  }
+
+  // AF3x rejects chains with custom templates but MSA left on Auto — it must
+  // be set explicitly either way (see _getMsaMode). Surface that early.
+  const warnEl = card.querySelector(`.msa-tpl-warning[data-seqid="${seqId}"]`);
+  if (warnEl) warnEl.style.display = (hasTemplates && _getMsaMode(card) === 'auto') ? '' : 'none';
+
+  subEl.textContent = parts.length ? `— ${parts.join(' · ')}` : '';
 }
 
 function _advancedBlock(type, id) {
-  if (type === 'ligand') return '<p class="adv-hint">No advanced options for ligands.</p>';
+  const descSection = `
+    <div class="adv-section">
+      <label class="adv-label" for="desc_${id}">Description
+        <span class="label-hint" data-tip="Free-text comment for this chain — purely cosmetic, not used by AF3x for prediction. Completely optional; leave blank if you don't need it.">?</span>
+      </label>
+      <input type="text" class="seq-description" id="desc_${id}" data-seqid="${id}"
+             placeholder="Optional — e.g. &quot;bait protein&quot; (not used by AF3x, just a label in the JSON)">
+    </div>`;
+
+  if (type === 'ligand') return descSection;
 
   const modSection = `
     <div class="adv-section">
@@ -411,6 +478,7 @@ function _advancedBlock(type, id) {
         <span>Modifications
           <span class="label-hint" data-tip="Post-translational modifications (e.g. phosphorylation, methylation) or RNA/DNA base modifications applied at a specific residue position. Click ⋯ on a row to search by name or CCD code.">?</span>
         </span>
+        <div class="adv-section-actions"></div>
         <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add modification</button>
       </div>
       <div class="mods-container" data-seqid="${id}"></div>
@@ -421,17 +489,21 @@ function _advancedBlock(type, id) {
     <div class="adv-section">
       <div class="adv-section-header">
         <span>MSA
-          <span class="label-hint" data-tip="Multiple Sequence Alignment — homologous sequences AF3 uses for coevolution signal. Auto: AF3 searches and builds it for you (recommended default). Custom: supply your own pre-computed .a3m file(s). None: skip MSA entirely (faster, but usually lower accuracy — mainly useful for orphan sequences or speed tests).">?</span>
+          <span class="label-hint" data-tip="Multiple Sequence Alignment — homologous sequences AF3 uses for coevolution signal. By default AF3 searches and builds it for you (recommended). Without MSA: skip it entirely (faster, but usually lower accuracy). Add custom MSA: supply your own pre-computed .a3m file(s) instead of letting AF3 search.">?</span>
         </span>
-        <select class="msa-mode-sel" data-seqid="${id}">
-          <option value="auto" title="AF3 searches sequence databases and builds the MSA automatically — recommended default">Auto (AF3 generates)</option>
-          <option value="custom" title="Provide your own pre-computed .a3m file(s) instead of letting AF3 search">Custom .a3m files</option>
-          <option value="none" title="Skip MSA entirely — faster but usually lower accuracy; mainly for orphan sequences or speed tests">None (MSA-free)</option>
-        </select>
+        <div class="adv-section-actions">
+          <label class="no-tpl-label no-msa-label" title="Sets unpairedMsa/pairedMsa to '' — disables MSA search/usage for this chain">
+            <input type="checkbox" class="no-msa-check" data-seqid="${id}">
+            Without MSA
+          </label>
+        </div>
+        <button class="btn btn-outline btn-xs add-msa-btn" data-seqid="${id}">+ Add custom MSA</button>
       </div>
+      <p class="adv-hint no-msa-hint" data-seqid="${id}">If no custom MSA is added, AF3 searches automatically.</p>
       <div class="msa-custom-wrap subsection" data-seqid="${id}" style="display:none">
         <div class="tpl-entry-header">
           <span class="tpl-entry-title">Custom MSA</span>
+          <button class="btn-icon remove-msa-btn" data-seqid="${id}" title="Remove custom MSA">✕</button>
         </div>
         <div class="msa-file-row">
           <span class="msa-file-label">Unpaired</span>
@@ -464,17 +536,23 @@ function _advancedBlock(type, id) {
         <span>Structural Templates
           <span class="label-hint" data-tip="Known structures of homologous proteins AF3 can use to guide folding. Leave empty for AF3 to search automatically, add specific ones manually, or check 'Without templates' to disable template search for this chain entirely.">?</span>
         </span>
-        <label class="no-tpl-label" title="Output templates:[] — disables AF3 template search for this chain">
-          <input type="checkbox" class="no-templates-check" data-seqid="${id}">
-          Without templates
-        </label>
+        <div class="adv-section-actions">
+          <label class="no-tpl-label" title="Output templates:[] — disables AF3 template search for this chain">
+            <input type="checkbox" class="no-templates-check" data-seqid="${id}">
+            Without templates
+          </label>
+        </div>
         <button class="btn btn-outline btn-xs add-tpl-btn" data-seqid="${id}">+ Add template</button>
       </div>
       <p class="adv-hint no-tpl-hint" data-seqid="${id}">If no templates are added, AF3 searches automatically.</p>
+      <p class="adv-hint msa-tpl-warning" data-seqid="${id}" style="display:none; color:var(--danger)">
+        ⚠ AF3x rejects this: when a chain has custom templates, MSA can't be left on Auto — it
+        must also be set explicitly. Pick <strong>Without MSA</strong> or add a custom MSA above.
+      </p>
       <div class="tpl-container" data-seqid="${id}"></div>
     </div>` : '';
 
-  return modSection + msaSection + tplSection;
+  return descSection + modSection + msaSection + tplSection;
 }
 
 // ── Tab wiring (input modes) ──────────────────────────────────────────────────
@@ -721,18 +799,55 @@ function _wireSeqInputTabs(card, type, id) {
         : 'If no templates are added, AF3 searches automatically.';
       const tplContainer = card.querySelector('.tpl-container');
       if (tplContainer) tplContainer.style.opacity = off ? '0.35' : '';
+      _updateAdvancedSummary(id);
     };
     noTplCheck.addEventListener('change', _applyNoTpl);
     _applyNoTpl();
   }
 
-  // MSA mode selector
-  const msaModeEl = card.querySelector('.msa-mode-sel');
-  if (msaModeEl) {
-    const customWrap = card.querySelector(`.msa-custom-wrap[data-seqid="${id}"]`);
-    msaModeEl.addEventListener('change', () => {
-      if (customWrap) customWrap.style.display = msaModeEl.value === 'custom' ? 'block' : 'none';
-    });
+  // MSA: "+ Add custom MSA" / "Without MSA" / remove
+  const msaCustomWrap = card.querySelector(`.msa-custom-wrap[data-seqid="${id}"]`);
+  const addMsaBtn     = card.querySelector(`.add-msa-btn[data-seqid="${id}"]`);
+  const noMsaCheck    = card.querySelector(`.no-msa-check[data-seqid="${id}"]`);
+
+  if (msaCustomWrap) {
+    if (addMsaBtn) {
+      addMsaBtn.addEventListener('click', () => {
+        msaCustomWrap.style.display = 'block';
+        if (noMsaCheck && noMsaCheck.checked) {
+          noMsaCheck.checked = false;
+          noMsaCheck.dispatchEvent(new Event('change'));
+        }
+        _updateAdvancedSummary(id);
+      });
+    }
+
+    const removeMsaBtn = card.querySelector(`.remove-msa-btn[data-seqid="${id}"]`);
+    if (removeMsaBtn) {
+      removeMsaBtn.addEventListener('click', () => {
+        msaCustomWrap.style.display = 'none';
+        card.querySelectorAll(
+          `.msa-unpaired-path[data-seqid="${id}"], .msa-unpaired-content[data-seqid="${id}"],
+           .msa-paired-path[data-seqid="${id}"], .msa-paired-content[data-seqid="${id}"]`
+        ).forEach(el => { el.value = ''; delete el.dataset.isUpload; });
+        _updateAdvancedSummary(id);
+      });
+    }
+
+    if (noMsaCheck) {
+      const _applyNoMsa = () => {
+        const off = noMsaCheck.checked;
+        if (addMsaBtn) addMsaBtn.disabled = off;
+        const hint = card.querySelector(`.no-msa-hint[data-seqid="${id}"]`);
+        if (hint) hint.textContent = off
+          ? 'MSA disabled for this chain (unpairedMsa/pairedMsa: "" in JSON).'
+          : 'If no custom MSA is added, AF3 searches automatically.';
+        if (off) msaCustomWrap.style.display = 'none';
+        _updateAdvancedSummary(id);
+      };
+      noMsaCheck.addEventListener('change', _applyNoMsa);
+      _applyNoMsa();
+    }
 
     // File upload: unpaired
     const unpairedFile = card.querySelector('.msa-unpaired-file');
@@ -746,6 +861,7 @@ function _wireSeqInputTabs(card, type, id) {
         reader.onload = e => {
           if (pathInput)   { pathInput.value = file.name; pathInput.dataset.isUpload = 'true'; }
           if (contentArea) contentArea.value = e.target.result;
+          _updateAdvancedSummary(id);
         };
         reader.readAsText(file);
       });
@@ -763,6 +879,7 @@ function _wireSeqInputTabs(card, type, id) {
         reader.onload = e => {
           if (pathInput)   { pathInput.value = file.name; pathInput.dataset.isUpload = 'true'; }
           if (contentArea) contentArea.value = e.target.result;
+          _updateAdvancedSummary(id);
         };
         reader.readAsText(file);
       });
@@ -770,7 +887,10 @@ function _wireSeqInputTabs(card, type, id) {
 
     // Clear isUpload flag when user manually edits the path
     card.querySelectorAll('.msa-unpaired-path, .msa-paired-path').forEach(inp => {
-      inp.addEventListener('input', () => { delete inp.dataset.isUpload; });
+      inp.addEventListener('input', () => {
+        delete inp.dataset.isUpload;
+        _updateAdvancedSummary(id);
+      });
     });
   }
 }
@@ -1282,6 +1402,60 @@ function _commitXlFromPopup() {
 
 // ── Template helper ───────────────────────────────────────────────────────────
 
+// ─── Template sequence alignment (query vs. template mmCIF chain) ─────────────
+// Needleman-Wunsch global alignment, used to suggest query/template index
+// mappings from the chain's pasted sequence vs. a template structure's chain.
+
+function _needlemanWunsch(seqA, seqB, match = 2, mismatch = -1, gap = -1) {
+  const n = seqA.length, m = seqB.length;
+  const dp = Array.from({ length: n + 1 }, () => new Float64Array(m + 1));
+  for (let i = 0; i <= n; i++) dp[i][0] = i * gap;
+  for (let j = 0; j <= m; j++) dp[0][j] = j * gap;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      const s = seqA[i - 1] === seqB[j - 1] ? match : mismatch;
+      dp[i][j] = Math.max(dp[i - 1][j - 1] + s, dp[i - 1][j] + gap, dp[i][j - 1] + gap);
+    }
+  }
+  let i = n, j = m, alignedA = '', alignedB = '';
+  while (i > 0 && j > 0) {
+    const s = seqA[i - 1] === seqB[j - 1] ? match : mismatch;
+    if (dp[i][j] === dp[i - 1][j - 1] + s) {
+      alignedA = seqA[i - 1] + alignedA; alignedB = seqB[j - 1] + alignedB; i--; j--;
+    } else if (dp[i][j] === dp[i - 1][j] + gap) {
+      alignedA = seqA[i - 1] + alignedA; alignedB = '-' + alignedB; i--;
+    } else {
+      alignedA = '-' + alignedA; alignedB = seqB[j - 1] + alignedB; j--;
+    }
+  }
+  while (i > 0) { alignedA = seqA[i - 1] + alignedA; alignedB = '-' + alignedB; i--; }
+  while (j > 0) { alignedA = '-' + alignedA; alignedB = seqB[j - 1] + alignedB; j--; }
+  return { alignedA, alignedB };
+}
+
+/** 0-based query/template index pairs for every column with a residue on both sides. */
+function _alignmentToMapping(alignedQuery, alignedTemplate) {
+  const queryIndices = [];
+  const templateIndices = [];
+  let qi = 0, ti = 0, nIdentical = 0, nAligned = 0;
+  for (let k = 0; k < alignedQuery.length; k++) {
+    const qc = alignedQuery[k], tc = alignedTemplate[k];
+    if (qc !== '-' && tc !== '-') {
+      queryIndices.push(qi);
+      templateIndices.push(ti);
+      nAligned++;
+      if (qc === tc) nIdentical++;
+      qi++; ti++;
+    } else if (qc === '-') {
+      ti++;
+    } else {
+      qi++;
+    }
+  }
+  const identity = nAligned ? nIdentical / nAligned : 0;
+  return { queryIndices, templateIndices, identity };
+}
+
 function _addTemplate(card, seqId) {
   const container = card.querySelector(`.tpl-container[data-seqid="${seqId}"]`);
   const idx = container.querySelectorAll('.tpl-entry').length;
@@ -1293,10 +1467,18 @@ function _addTemplate(card, seqId) {
       <span class="tpl-entry-title">Template ${idx + 1}</span>
       <button class="btn-icon remove-tpl-btn" title="Remove template">✕</button>
     </div>
+    <p class="adv-hint tpl-entry-intro">
+      A template needs a single-chain structure (mmCIF) plus a 0-based mapping between
+      this chain's sequence and the template's residues. If you already have a prepared
+      mapping, use <strong>Upload mapping file</strong> below. Otherwise, pasting or
+      uploading the mmCIF content automatically suggests one — AF3x itself has no tool
+      for this, it only defines the JSON format, so treat the suggestion as a starting
+      point to check, not a guaranteed-correct mapping.
+    </p>
     <div class="field-row">
       <div class="field field-grow">
         <label>mmCIF content</label>
-        <textarea class="tpl-mmcif" rows="2" placeholder="Paste mmCIF or leave blank to use path"></textarea>
+        <textarea class="tpl-mmcif" rows="2" placeholder="Paste mmCIF, or leave blank and use &quot;Upload &amp; align&quot; below"></textarea>
       </div>
       <div class="field field-grow">
         <label>mmCIF path</label>
@@ -1312,17 +1494,39 @@ function _addTemplate(card, seqId) {
         <label>Template indices (0-based, comma-separated)</label>
         <input type="text" class="tpl-tpl-idx" placeholder="0,1,2,8">
       </div>
-    </div>
-    <div class="tpl-mapping-upload-row">
-      <label class="btn btn-ghost btn-xs msa-upload-label"
-             title="Upload a 2-column CSV/TSV file (query_index,template_index per line) to fill both index fields — this is a local convenience, not an AF3x JSON field">
+      <label class="btn btn-ghost btn-xs tpl-mapping-upload-label"
+             title="Upload a 2-column CSV/TSV file (query_index,template_index per line, one pair per row, 0-based) to fill both index fields above — a local convenience, not an AF3x JSON field">
         Upload mapping file
         <input type="file" class="tpl-mapping-file" accept=".csv,.tsv,.txt" style="display:none">
       </label>
-      <span class="adv-hint tpl-mapping-hint">2 columns: query_index,template_index (one pair per line, 0-based)</span>
-    </div>`;
+    </div>
+    <div class="tpl-align-row">
+      <label class="btn btn-outline btn-xs tpl-align-upload-label"
+             title="Upload a PDB or mmCIF file: fills the content field above (converting PDB to mmCIF automatically) and suggests a mapping right away.">
+        Upload &amp; align
+        <input type="file" class="tpl-align-upload-file" accept=".pdb,.ent,.cif,.mmcif,.txt" style="display:none">
+      </label>
+    </div>
+    <p class="adv-hint tpl-align-hint">Pasting or uploading mmCIF content above automatically suggests a mapping below — review it and click Apply.</p>
+    <div class="tpl-align-result" style="display:none"></div>`;
 
-  div.querySelector('.remove-tpl-btn').addEventListener('click', () => div.remove());
+  div.querySelector('.remove-tpl-btn').addEventListener('click', () => {
+    div.remove();
+    _updateAdvancedSummary(seqId);
+  });
+
+  // mmCIF content vs path: mutually exclusive — filling one disables the other
+  const mmcifTa   = div.querySelector('.tpl-mmcif');
+  const mmcifPath = div.querySelector('.tpl-mmcif-path');
+
+  function _syncMmcifExclusivity() {
+    const hasContent = mmcifTa.value.trim().length > 0;
+    const hasPath     = mmcifPath.value.trim().length > 0;
+    mmcifPath.disabled = hasContent;
+    mmcifTa.disabled   = hasPath;
+  }
+  mmcifTa.addEventListener('input', _syncMmcifExclusivity);
+  mmcifPath.addEventListener('input', _syncMmcifExclusivity);
 
   div.querySelector('.tpl-mapping-file').addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -1353,7 +1557,119 @@ function _addTemplate(card, seqId) {
     e.target.value = '';
   });
 
+  // Sequence alignment → suggest query/template indices
+  const alignResult = div.querySelector('.tpl-align-result');
+
+  const _runTplAlignment = (templateChain) => {
+    const querySeq = card.querySelector('.seq-textarea')?.value.trim().replace(/\s+/g, '').toUpperCase() || '';
+    const { alignedA, alignedB } = _needlemanWunsch(querySeq, templateChain.sequence);
+    const { queryIndices, templateIndices, identity } = _alignmentToMapping(alignedA, alignedB);
+    if (!queryIndices.length) {
+      alignResult.innerHTML = `<p class="adv-hint" style="color:var(--danger)">No alignable positions found between this chain's sequence and the template.</p>`;
+      alignResult.style.display = '';
+      return;
+    }
+    alignResult.innerHTML = `
+      <p class="adv-hint">
+        Aligned against chain ${templateChain.chainId} (${templateChain.sequence.length} aa) —
+        ${queryIndices.length} mapped position${queryIndices.length === 1 ? '' : 's'},
+        ${(identity * 100).toFixed(0)}% identity over the aligned region.
+      </p>
+      <button class="btn btn-primary btn-xs tpl-apply-align-btn" type="button">Apply mapping (${queryIndices.length} pairs)</button>`;
+    alignResult.style.display = '';
+    alignResult.querySelector('.tpl-apply-align-btn').addEventListener('click', () => {
+      div.querySelector('.tpl-query-idx').value = queryIndices.join(',');
+      div.querySelector('.tpl-tpl-idx').value   = templateIndices.join(',');
+    });
+  };
+
+  const _startAlignmentFromText = (structText, { silent = false } = {}) => {
+    if (!structText.trim()) {
+      if (!silent) alert('No mmCIF content above yet — paste/upload it there first, or use "Upload & align" below.');
+      return;
+    }
+    const querySeq = card.querySelector('.seq-textarea')?.value.trim().replace(/\s+/g, '') || '';
+    if (!querySeq) {
+      if (!silent) alert('This chain has no sequence yet — add one in the Sequence field above first.');
+      return;
+    }
+
+    let chains;
+    try {
+      chains = extractAtomSequences(structText);
+    } catch (e) {
+      if (!silent) alert('Could not parse this structure file: ' + e.message);
+      return;
+    }
+    // Keep chains that look like protein (mostly standard amino acids, not
+    // nucleic acid/unrecognized residues, which extractAtomSequences maps to 'X')
+    const proteinChains = chains.filter(c => {
+      if (!c.sequence) return false;
+      const nUnknown = (c.sequence.match(/X/g) || []).length;
+      return nUnknown / c.sequence.length < 0.5;
+    });
+    if (!proteinChains.length) {
+      if (silent) { alignResult.style.display = 'none'; return; }
+      alignResult.innerHTML = `<p class="adv-hint" style="color:var(--danger)">No protein chains with a sequence found in this structure file.</p>`;
+      alignResult.style.display = '';
+      return;
+    }
+
+    if (proteinChains.length === 1) {
+      _runTplAlignment(proteinChains[0]);
+    } else {
+      const options = proteinChains
+        .map((c, i) => `<option value="${i}">Chain ${c.chainId} (${c.sequence.length} aa)</option>`)
+        .join('');
+      alignResult.innerHTML = `
+        <div class="tpl-chain-pick-row">
+          <label>Multiple protein chains found — pick one:</label>
+          <select class="tpl-chain-pick-sel">${options}</select>
+          <button class="btn btn-outline btn-xs tpl-chain-pick-confirm" type="button">Align</button>
+        </div>`;
+      alignResult.style.display = '';
+      alignResult.querySelector('.tpl-chain-pick-confirm').addEventListener('click', () => {
+        const idx = parseInt(alignResult.querySelector('.tpl-chain-pick-sel').value);
+        _runTplAlignment(proteinChains[idx]);
+      });
+    }
+  };
+
+  // Auto-suggest a mapping whenever the mmCIF content changes (paste/typing),
+  // debounced so it doesn't re-run on every keystroke. Silent: no alerts if a
+  // prerequisite (sequence, parseable content) isn't there yet — it just waits.
+  let _alignDebounceTimer = null;
+  mmcifTa.addEventListener('input', () => {
+    clearTimeout(_alignDebounceTimer);
+    _alignDebounceTimer = setTimeout(() => {
+      _startAlignmentFromText(mmcifTa.value, { silent: true });
+    }, 500);
+  });
+
+  div.querySelector('.tpl-align-upload-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      // Also fill the content field above with this file (converting legacy
+      // PDB to mmCIF first, since that's what AF3x's templates require) —
+      // that's exactly what's needed for the JSON anyway, no reason to make
+      // the user upload the same file twice via two different buttons.
+      if (!mmcifTa.disabled) {
+        try {
+          mmcifTa.value = isMmcifText(text) ? text : pdbToMmcif(text, file.name.replace(/\.[^.]+$/, ''));
+          _syncMmcifExclusivity();
+        } catch { /* fall through to alignment below using the raw text */ }
+      }
+      _startAlignmentFromText(text);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
   container.appendChild(div);
+  _updateAdvancedSummary(seqId);
 }
 
 // ─── Crosslink Groups ─────────────────────────────────────────────────────────
@@ -1747,12 +2063,14 @@ function _addModRow(container, seqId, ccdCode = '', position = '') {
     if (_modPickState?.row === row) _exitModPickMode();
     row.remove();
     _updateRuler(document.querySelector(`.seq-card[data-id="${seqId}"]`));
+    _updateAdvancedSummary(seqId);
   });
   row.querySelector('.mod-pick-btn').addEventListener('click', () => _openPTMPicker(seqId, row));
   row.querySelector('.mod-res-pick-btn').addEventListener('click', () => _toggleModResiduePickMode(seqId, row));
 
   container.appendChild(row);
   if (ccdCode && position) _validateModRow(ccdCode, position, seqId, warnEl);
+  _updateAdvancedSummary(seqId);
 }
 
 function _validateModRow(ccdRaw, posRaw, seqId, warnEl) {
@@ -1988,6 +2306,10 @@ function _populateFromJSON(json) {
       chainInput.value = Array.isArray(data.id) ? data.id.join(',') : (data.id || '');
     }
 
+    // Description (optional, purely cosmetic)
+    const descInput = card.querySelector('.seq-description');
+    if (descInput) descInput.value = data.description || '';
+
     // Sequence
     const seqTA = card.querySelector('.seq-textarea');
     if (seqTA && data.sequence) {
@@ -2007,15 +2329,15 @@ function _populateFromJSON(json) {
     }
 
     // MSA
-    const msaModeEl   = card.querySelector('.msa-mode-sel');
+    const noMsaCheckEl  = card.querySelector('.no-msa-check');
     const msaCustomWrap = card.querySelector('.msa-custom-wrap');
-    if (msaModeEl) {
+    if (noMsaCheckEl) {
       const hasMsaFree   = data.unpairedMsa === '' || data.pairedMsa === '';
       const hasCustomMsa = data.unpairedMsaPath || data.pairedMsaPath || data.unpairedMsa || data.pairedMsa;
       if (hasMsaFree) {
-        msaModeEl.value = 'none';
+        noMsaCheckEl.checked = true;
+        noMsaCheckEl.dispatchEvent(new Event('change'));
       } else if (hasCustomMsa) {
-        msaModeEl.value = 'custom';
         if (msaCustomWrap) msaCustomWrap.style.display = 'block';
         const unpairedPathEl = card.querySelector('.msa-unpaired-path');
         const pairedPathEl   = card.querySelector('.msa-paired-path');
@@ -2060,6 +2382,8 @@ function _populateFromJSON(json) {
         noTplCheck.dispatchEvent(new Event('change'));
       }
     }
+
+    _updateAdvancedSummary(card.dataset.id);
   });
 
   // Crosslinks
@@ -2100,7 +2424,9 @@ function _populateFromJSON(json) {
   });
 
   // User CCD
-  document.getElementById('userCCD').value = json.userCCD || '';
+  document.getElementById('userCCD').value     = json.userCCD || '';
+  document.getElementById('userCCDPath').value = json.userCCDPath || '';
+  _syncUserCcdExclusivity();
 
   updateViz();
   alert('JSON imported successfully!');
@@ -2319,7 +2645,7 @@ function _showValidationReport(errors, warnings, infos = []) {
 function _buildJSON() {
   const name    = document.getElementById('jobName').value.trim();
   const seedRaw = document.getElementById('modelSeeds').value.trim();
-  const version = 2;  // AF3x input format version is fixed at 2
+  const version = 4;  // AF3x input format version is fixed at 4 (current: adds userCCDPath [v3] and description fields [v4])
 
   let seeds;
   if (/^\d+$/.test(seedRaw)) {
@@ -2348,6 +2674,9 @@ function _buildJSON() {
       : chainRaw;
 
     const seqData = { id: ids };
+
+    const description = card.querySelector('.seq-description')?.value.trim();
+    if (description) seqData.description = description;
 
     if (type === 'ligand') {
       const smilesEl = card.querySelector('.ligand-smiles');
@@ -2389,8 +2718,9 @@ function _buildJSON() {
     if (mods.length) seqData.modifications = mods;
 
     // MSA — protein and RNA only; DNA has no MSA support in AF3x spec
+    let msaMode = 'auto';
     if (type === 'protein' || type === 'rna') {
-      const msaMode = card.querySelector('.msa-mode-sel')?.value || 'auto';
+      msaMode = _getMsaMode(card);
 
       if (msaMode === 'none') {
         seqData.unpairedMsa = '';
@@ -2452,6 +2782,14 @@ function _buildJSON() {
       seqData.templates = []; // explicitly disable template search
     } else if (tplEntries.length) {
       seqData.templates = tplEntries;
+      // AF3x rejects this combination outright ("templates set only partially"):
+      // custom templates require unpairedMsa/pairedMsa to also be explicit.
+      if (msaMode === 'auto') {
+        throw new Error(
+          `Chain "${chainRaw}": has custom templates but MSA is still on Auto. ` +
+          `AF3x requires MSA to be explicit too — pick "Without MSA" or add a custom MSA for this chain.`
+        );
+      }
     }
 
     output.sequences.push({ [type]: seqData });
@@ -2511,7 +2849,10 @@ function _buildJSON() {
 
   // ── User CCD ────────────────────────────────────────────────────────────────
   const ccdContent = document.getElementById('userCCD')?.value.trim();
-  if (ccdContent) output.userCCD = ccdContent;
+  const ccdPath    = document.getElementById('userCCDPath')?.value.trim();
+  if (ccdContent && ccdPath) throw new Error('Provide User CCD content OR path, not both.');
+  if (ccdContent) output.userCCD     = ccdContent;
+  if (ccdPath)    output.userCCDPath = ccdPath;
 
   return output;
 }
@@ -2565,7 +2906,7 @@ function _readChainsFromDOM() {
   document.querySelectorAll('.seq-card').forEach((card, cardIdx) => {
     const type     = card.querySelector('.seq-type-label')?.textContent.toLowerCase() || 'protein';
     const chainRaw  = card.querySelector('.seq-chain-id')?.value.trim() || '';
-    const colorIdx  = parseInt(card.dataset.colorIdx) || cardIdx;
+    const color     = card.dataset.color || chainColorForType(type, cardIdx);
     const seqTA     = card.querySelector('.seq-textarea');
     const seqLen    = seqTA ? (seqTA.value.trim().replace(/\s/g,'').length || 0) : 0;
 
@@ -2574,7 +2915,7 @@ function _readChainsFromDOM() {
       : chainRaw ? [chainRaw] : [];
 
     ids.forEach(id => {
-      chains.push({ id, label: id, length: seqLen || null, colorIdx, type });
+      chains.push({ id, label: id, length: seqLen || null, color, type });
     });
   });
   return chains;
@@ -3268,6 +3609,40 @@ function _applyThemeIcon(theme) {
   if (!btn) return;
   btn.textContent = theme === 'light' ? '🌙' : '☀️';
   btn.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+}
+
+// ─── Intro / overview banner ───────────────────────────────────────────────────
+// Always present (not dismissible) — only collapsible, so the quick overview
+// stays available rather than disappearing forever after one click.
+
+function _initIntroBanner() {
+  const banner = document.getElementById('introBanner');
+  if (!banner) return;
+
+  const body        = document.getElementById('introBannerBody');
+  const collapseBtn = document.getElementById('introCollapseBtn');
+
+  collapseBtn.addEventListener('click', () => {
+    const collapsed = body.style.display === 'none';
+    body.style.display = collapsed ? '' : 'none';
+    collapseBtn.textContent = collapsed ? 'Hide details ▾' : 'Show details ▸';
+  });
+}
+
+function _syncUserCcdExclusivity() {
+  const content = document.getElementById('userCCD');
+  const path     = document.getElementById('userCCDPath');
+  if (!content || !path) return;
+  path.disabled    = content.value.trim().length > 0;
+  content.disabled = path.value.trim().length > 0;
+}
+
+function _initUserCcdExclusivity() {
+  const content = document.getElementById('userCCD');
+  const path     = document.getElementById('userCCDPath');
+  if (!content || !path) return;
+  content.addEventListener('input', _syncUserCcdExclusivity);
+  path.addEventListener('input', _syncUserCcdExclusivity);
 }
 
 // ─── Global tooltips for .label-hint "?" icons ─────────────────────────────────

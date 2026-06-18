@@ -1,18 +1,35 @@
 // Static data: crosslinkers, PTM database, chain colours
 
-// ─── Chain colours (10 distinct, readable on white) ─────────────────────────
-export const CHAIN_COLORS = [
-  '#1a73e8', // blue
-  '#34a853', // green
-  '#ea4335', // red
-  '#fa7b17', // orange
-  '#9334e6', // purple
-  '#007b83', // teal
-  '#c01880', // pink
-  '#795548', // brown
-  '#5f6368', // grey
-  '#1557b0', // dark blue
-];
+// ─── Chain colours, grouped by entity type ───────────────────────────────────
+// Each type gets its own colour family (matches the +Protein/+RNA/+DNA/+Ligand
+// button accents) so chains stay recognisable by type at a glance. Shades are
+// generated from a base hue per type rather than a small fixed palette, so any
+// number of same-type chains (large multimers included) stay distinguishable
+// instead of repeating after a handful of entries.
+const CHAIN_HUE_BY_TYPE = { protein: 217, rna: 142, dna: 28, ligand: 271 };
+
+// Lightness is kept in a narrow, always-visible band (47-65%): dipping much
+// darker makes a bar nearly disappear against a dark page background and
+// makes the chain-ID text (which also uses this colour) unreadable — that
+// was the actual bug, not the hue spread. Differentiation instead comes
+// from large hue swings across most of the type's available arc, which is
+// far more perceptually distinct than a saturation or lightness tweak.
+// Same 12-step cycle for every type, so any of them stays distinguishable
+// even for a large multimer, not just protein.
+const _LIGHT_STEPS = [50, 62, 48, 65, 52, 58, 49, 64, 55, 47, 61, 53];
+const _HUE_STEPS   = [0, -55, 35, -25, 50, -40, 20, -15, 45, -30, 10, 60];
+const _SAT_RINGS   = [85, 65];
+
+/** Returns a CSS color string for the Nth (0-based) chain of a given entity type. */
+export function chainColorForType(type, index) {
+  const hue   = CHAIN_HUE_BY_TYPE[type] ?? CHAIN_HUE_BY_TYPE.protein;
+  const cycle = _LIGHT_STEPS.length;
+  const ring  = Math.floor(index / cycle) % _SAT_RINGS.length;
+  const light = _LIGHT_STEPS[index % cycle];
+  const hOff  = _HUE_STEPS[index % cycle];
+  const sat   = _SAT_RINGS[ring];
+  return `hsl(${hue + hOff}, ${sat}%, ${light}%)`;
+}
 
 // Arc colours for crosslink groups (cycle through these)
 export const XL_GROUP_COLORS = [

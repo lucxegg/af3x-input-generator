@@ -10,7 +10,7 @@
  *   Escape / ✕         close
  */
 
-import { CHAIN_COLORS, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
+import { XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 
 const NS   = 'http://www.w3.org/2000/svg';
 const ML   = 94;   // left margin  (room for chain labels)
@@ -134,7 +134,7 @@ function _draw() {
   // Chain bars
   _chains.forEach(chain => {
     const y     = _chainY[chain.id];
-    const color = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
+    const color = chain.color;
     const len   = chain.length || null;  // null = unknown length
     const cw    = chainW[chain.id];
 

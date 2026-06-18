@@ -17,11 +17,19 @@ const AA3TO1 = {
 // ─── Format detection ─────────────────────────────────────────────────────────
 
 function _detectFileFormat(text) {
-  const first300 = text.slice(0, 300);
-  if (/^data_/m.test(first300) || /^loop_/m.test(first300) || /_atom_site/m.test(first300)) {
+  // Some mmCIF files (e.g. AlphaFold3 outputs) start with a long comment/license
+  // header before "data_", so scan a generous window rather than just the first
+  // few hundred characters.
+  const head = text.slice(0, 5000);
+  if (/^data_/m.test(head) || /^loop_/m.test(head) || /_atom_site/m.test(head)) {
     return 'mmcif';
   }
   return 'pdb';
+}
+
+/** True if the given text looks like mmCIF (vs. legacy PDB format). */
+export function isMmcifText(text) {
+  return _detectFileFormat(text) === 'mmcif';
 }
 
 // ─── PDB parser (SEQRES) ──────────────────────────────────────────────────────
@@ -45,6 +53,35 @@ function parsePDB(text) {
       chains.push({ chainId, type, sequence, entityName: `Chain ${chainId}` });
     }
   }
+
+  // Fallback: minimal/computationally-generated PDBs (e.g. written by
+  // BioPython without headers) have no SEQRES — derive the sequence from
+  // ATOM records instead.
+  if (!chains.length) {
+    const byChain = {};   // chainId → [3-letter codes], in residue order
+    const seen = new Set();
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('ATOM')) continue;
+      const altLoc = line[16] || ' ';
+      if (altLoc !== ' ' && altLoc !== 'A') continue;
+      const resName = line.substring(17, 20).trim().toUpperCase();
+      const chainId = line[21] || ' ';
+      const resSeq  = line.substring(22, 26).trim();
+      const iCode   = line[26] || ' ';
+      const key = `${chainId}_${resSeq}${iCode}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      (byChain[chainId] ||= []).push(resName);
+    }
+    for (const [chainId, residues] of Object.entries(byChain)) {
+      const type = _detectResidueType(residues);
+      const sequence = _convertResidues(residues, type);
+      if (type !== 'unknown' && sequence.length > 0) {
+        chains.push({ chainId, type, sequence, entityName: `Chain ${chainId}` });
+      }
+    }
+  }
+
   return chains;
 }
 
@@ -140,7 +177,7 @@ function _mmcifParseEntities(text) {
   const entities = {};
 
   // Try loop_ form first
-  const loopMatch = _mmcifFindLoop(text, '_entity.id');
+  const loopMatch = _mmcifFindCategory(text, '_entity.id');
   if (loopMatch) {
     const cols = loopMatch.columns;
     const iId   = cols.indexOf('_entity.id');
@@ -155,7 +192,7 @@ function _mmcifParseEntities(text) {
   }
 
   // Parse _entity_poly for polymer type and sequence
-  const polyLoop = _mmcifFindLoop(text, '_entity_poly.entity_id');
+  const polyLoop = _mmcifFindCategory(text, '_entity_poly.entity_id');
   if (polyLoop) {
     const cols   = polyLoop.columns;
     const iEid   = cols.indexOf('_entity_poly.entity_id');
@@ -174,18 +211,53 @@ function _mmcifParseEntities(text) {
     }
   }
 
-  // Handle multi-line sequence values (semicolon-delimited text fields in CIF)
-  // The loop parser may not handle multi-line; do a targeted regex search
-  const seqRe = /_entity_poly\.pdbx_seq_one_letter_code(?:_can)?\s*\n;([\s\S]*?);/gm;
-  // Not needed because _mmcifFindLoop handles it; kept as fallback if needed
+  // Fallback: some mmCIF writers (e.g. AlphaFold3) omit the packed
+  // pdbx_seq_one_letter_code(_can) string and instead only provide the
+  // per-residue _entity_poly_seq loop (entity_id, mon_id, num in order).
+  // Build the sequence from that when the packed form is missing.
+  const needsFallback = Object.values(entities).some(e => e.polymerType && !e.sequence);
+  if (needsFallback) {
+    const seqLoop = _mmcifFindCategory(text, '_entity_poly_seq.entity_id');
+    if (seqLoop) {
+      const cols  = seqLoop.columns;
+      const iEid  = cols.indexOf('_entity_poly_seq.entity_id');
+      const iMon  = cols.indexOf('_entity_poly_seq.mon_id');
+      const iNum  = cols.indexOf('_entity_poly_seq.num');
+      const byEntity = {}; // eid -> [{num, mon}]
+      for (const row of seqLoop.rows) {
+        const eid = row[iEid];
+        if (!eid || !entities[eid] || entities[eid].sequence) continue;
+        (byEntity[eid] ||= []).push({
+          num: iNum >= 0 ? parseInt(row[iNum]) || 0 : 0,
+          mon: (iMon >= 0 ? row[iMon] : '').toUpperCase(),
+        });
+      }
+      for (const [eid, residues] of Object.entries(byEntity)) {
+        residues.sort((a, b) => a.num - b.num);
+        const type = _mmcifPolyType(entities[eid].polymerType);
+        entities[eid].sequence = residues
+          .map(r => type === 'protein' ? (AA3TO1[r.mon] || 'X') : _nucToOne(r.mon))
+          .join('');
+      }
+    }
+  }
 
   return entities;
+}
+
+function _nucToOne(code) {
+  if (['DA', 'RA', 'A', 'ADE'].includes(code)) return 'A';
+  if (['DC', 'RC', 'C', 'CYT'].includes(code)) return 'C';
+  if (['DG', 'RG', 'G', 'GUA'].includes(code)) return 'G';
+  if (['DU', 'RU', 'U', 'URA', 'URI', 'UR'].includes(code)) return 'U';
+  if (['DT', 'T', 'THY'].includes(code)) return 'T';
+  return 'N';
 }
 
 // Parse _struct_asym to get chain→entity mapping
 function _mmcifParseAsyms(text) {
   const asyms = {};
-  const loop = _mmcifFindLoop(text, '_struct_asym.id');
+  const loop = _mmcifFindCategory(text, '_struct_asym.id');
   if (!loop) return asyms;
   const cols  = loop.columns;
   const iId   = cols.indexOf('_struct_asym.id');
@@ -201,7 +273,7 @@ function _mmcifParseAsyms(text) {
 // Parse _pdbx_entity_nonpoly for ligand CCD codes
 function _mmcifParseNonpolys(text) {
   const nonpolys = {};
-  const loop = _mmcifFindLoop(text, '_pdbx_entity_nonpoly.entity_id');
+  const loop = _mmcifFindCategory(text, '_pdbx_entity_nonpoly.entity_id');
   if (!loop) return nonpolys;
   const cols  = loop.columns;
   const iEid  = cols.indexOf('_pdbx_entity_nonpoly.entity_id');
@@ -215,6 +287,58 @@ function _mmcifParseNonpolys(text) {
 }
 
 // Minimal CIF loop parser: finds a loop that has the given column, returns {columns, rows}
+// Finds a category by column name, trying loop_ form first, then falling
+// back to the flat "single row, no loop_" form CIF allows for categories
+// with exactly one row (very common for _entity/_entity_poly/_struct_asym
+// etc. in single-chain/single-entity PDB-deposited structures).
+function _mmcifFindCategory(text, targetColumn) {
+  return _mmcifFindLoop(text, targetColumn) || _mmcifFindFlatRow(text, targetColumn);
+}
+
+function _mmcifFindFlatRow(text, targetColumn) {
+  const categoryPrefix = targetColumn.slice(0, targetColumn.indexOf('.'));
+  const lines = text.split('\n');
+  const columns = [];
+  const values = [];
+  let found = false;
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith(categoryPrefix + '.')) {
+      found = true;
+      const sp = trimmed.search(/\s/);
+      const key  = sp === -1 ? trimmed : trimmed.slice(0, sp);
+      let rest   = sp === -1 ? '' : trimmed.slice(sp).trim();
+      i++;
+      if (!rest) {
+        if (i < lines.length && lines[i].trimStart().startsWith(';')) {
+          let value = lines[i].replace(/^\s*;/, '');
+          i++;
+          while (i < lines.length && !lines[i].startsWith(';')) {
+            value += '\n' + lines[i];
+            i++;
+          }
+          i++; // skip closing ';'
+          rest = value.trim();
+        } else if (i < lines.length) {
+          rest = lines[i].trim();
+          i++;
+        }
+      }
+      columns.push(key);
+      values.push(_mmcifUnquote(rest));
+      continue;
+    }
+    if (found) {
+      if (trimmed === '#' || trimmed === '') { i++; continue; }
+      break; // category block ended
+    }
+    i++;
+  }
+  if (!found || !columns.includes(targetColumn)) return null;
+  return { columns, rows: [values] };
+}
+
 function _mmcifFindLoop(text, targetColumn) {
   const lines = text.split('\n');
   let i = 0;
@@ -311,6 +435,172 @@ function _mmcifUnquote(s) {
     return s.slice(1, -1);
   }
   return s === '.' || s === '?' ? '' : s;
+}
+
+/** Parse PDB or mmCIF text into a list of chains, auto-detecting the format. */
+export function parseStructureChains(text) {
+  const fmt = _detectFileFormat(text);
+  return fmt === 'mmcif' ? parseMmCIF(text) : parsePDB(text);
+}
+
+// ─── Legacy PDB → minimal mmCIF conversion ─────────────────────────────────────
+// AF3x's Template.mmcif field is parsed with a CIF parser internally — it has
+// no PDB-format code path at all, so a PDB file can never be used there
+// directly. This builds a minimal, valid mmCIF text (just an _atom_site loop,
+// the same scope a "template" mmCIF needs) from PDB ATOM/HETATM records, so
+// uploaded PDB files work everywhere a real mmCIF would.
+
+const ATOM_SITE_COLUMNS = [
+  'group_PDB', 'id', 'type_symbol', 'label_atom_id', 'label_alt_id', 'label_comp_id',
+  'label_asym_id', 'label_entity_id', 'label_seq_id', 'pdbx_PDB_ins_code',
+  'Cartn_x', 'Cartn_y', 'Cartn_z', 'occupancy', 'B_iso_or_equiv',
+  'pdbx_formal_charge', 'auth_seq_id', 'auth_asym_id', 'pdbx_PDB_model_num',
+];
+
+/**
+ * Converts legacy PDB ATOM records to a minimal mmCIF text. Throws if none found.
+ *
+ * Only ATOM records are kept (no HETATM/waters/ligands): AF3x templates must be
+ * a single protein chain, and lumping water into the same label_entity_id as the
+ * polymer makes AF3x's own mmCIF parser reject the file with "non-water entity
+ * has water molecules" — giving water its own entity would work too, but
+ * templates don't need it at all, so dropping it is simpler and correct.
+ */
+export function pdbToMmcif(pdbText, dataName = 'converted') {
+  const rows = [];
+  let serial = 0;
+  for (const line of pdbText.split('\n')) {
+    const rec = line.slice(0, 6).trim();
+    if (rec !== 'ATOM') continue;
+    const atomName = line.slice(12, 16).trim();
+    const altLoc   = line[16] && line[16] !== ' ' ? line[16] : '.';
+    const resName  = line.slice(17, 20).trim();
+    const chainId  = line[21] && line[21] !== ' ' ? line[21] : 'A';
+    const resSeq   = line.slice(22, 26).trim() || '.';
+    const iCode    = line[26] && line[26] !== ' ' ? line[26] : '?';
+    const x = line.slice(30, 38).trim();
+    const y = line.slice(38, 46).trim();
+    const z = line.slice(46, 54).trim();
+    if (!atomName || !resName || x === '' || y === '' || z === '') continue;
+    const occ  = line.slice(54, 60).trim() || '1.00';
+    const temp = line.slice(60, 66).trim() || '0.00';
+    let elem   = line.slice(76, 78).trim();
+    if (!elem) elem = (atomName.match(/^[A-Za-z]+/) || ['C'])[0].slice(0, 1);
+    serial++;
+    rows.push([
+      rec, serial, elem, atomName, altLoc, resName, chainId, '1',
+      resSeq, iCode, x, y, z, occ, temp, '?', resSeq, chainId, '1',
+    ]);
+  }
+  if (!rows.length) {
+    throw new Error('No ATOM/HETATM records found — is this really a PDB file?');
+  }
+
+  // AF3x's template featurisation requires a release date
+  // (_pdbx_audit_revision_history.revision_date) or it refuses the template
+  // outright. A legacy PDB HEADER line carries a deposition date (cols 51-59,
+  // DD-MMM-YY); fall back to today if that's missing or unparsable — the exact
+  // date doesn't matter for using the structure as a manually-supplied template.
+  const releaseDate = _pdbDepositionDate(pdbText) || new Date().toISOString().slice(0, 10);
+
+  let out = `data_${dataName}\n#\n`;
+  out += `loop_\n_pdbx_audit_revision_history.revision_date\n${releaseDate}\n#\n`;
+  out += 'loop_\n';
+  for (const c of ATOM_SITE_COLUMNS) out += `_atom_site.${c}\n`;
+  for (const r of rows) out += r.join(' ') + '\n';
+  out += '#\n';
+  return out;
+}
+
+function _pdbDepositionDate(pdbText) {
+  const headerLine = pdbText.split('\n').find(l => l.startsWith('HEADER'));
+  if (!headerLine) return null;
+  const m = headerLine.slice(50, 59).trim().match(/^(\d{2})-(\w{3})-(\d{2})$/i);
+  if (!m) return null;
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const mi = months.indexOf(m[2].toUpperCase());
+  if (mi === -1) return null;
+  const yy = parseInt(m[3], 10);
+  const year = yy <= 30 ? 2000 + yy : 1900 + yy; // PDB 2-digit year convention
+  return `${year}-${String(mi + 1).padStart(2, '0')}-${m[1]}`;
+}
+
+// ─── ATOM-record sequence extraction (for template index alignment) ───────────
+//
+// Unlike parseStructureChains() above (which uses SEQRES / _entity_poly — the
+// full construct sequence, which may include residues with no coordinates),
+// this walks the actual ATOM records so the resulting 0-based positions match
+// what AF3x's templateIndices must refer to: residues that are actually present
+// in the template structure.
+
+/** Returns [{chainId, sequence}] built only from observed ATOM records. */
+export function extractAtomSequences(text) {
+  const fmt = _detectFileFormat(text);
+  return fmt === 'mmcif' ? _atomSeqFromMmcif(text) : _atomSeqFromPdb(text);
+}
+
+function _atomSeqFromPdb(text) {
+  const chains = {};   // chainId -> [resName, ...]
+  const seen   = new Set();
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('ATOM')) continue;
+    const altLoc = line[16] || ' ';
+    if (altLoc !== ' ' && altLoc !== 'A') continue; // skip alt conformers other than the first
+    const resName = line.substring(17, 20).trim().toUpperCase();
+    const chainId = line[21] || ' ';
+    const resSeq  = line.substring(22, 26).trim();
+    const iCode   = line[26] || ' ';
+    const key = `${chainId}_${resSeq}${iCode}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (chains[chainId] ||= []).push(resName);
+  }
+  return Object.entries(chains).map(([chainId, resnames]) => ({
+    chainId,
+    sequence: resnames.map(r => AA3TO1[r] || 'X').join(''),
+  })).filter(c => c.sequence.length > 0);
+}
+
+function _atomSeqFromMmcif(text) {
+  const loop = _mmcifFindLoop(text, '_atom_site.group_PDB');
+  if (!loop) return [];
+  const cols = loop.columns;
+  const iGroup     = cols.indexOf('_atom_site.group_PDB');
+  const iComp      = cols.indexOf('_atom_site.label_comp_id');
+  const iAsym      = cols.indexOf('_atom_site.label_asym_id');
+  const iAuthAsym  = cols.indexOf('_atom_site.auth_asym_id');
+  const iSeqId     = cols.indexOf('_atom_site.label_seq_id');
+  const iAuthSeqId = cols.indexOf('_atom_site.auth_seq_id');
+  const iIns       = cols.indexOf('_atom_site.pdbx_PDB_ins_code');
+  const iAlt       = cols.indexOf('_atom_site.label_alt_id');
+  const iModel     = cols.indexOf('_atom_site.pdbx_PDB_model_num');
+
+  const chains = {};
+  const seen   = new Set();
+  let firstModel = null;
+  for (const row of loop.rows) {
+    if (iGroup >= 0 && row[iGroup] !== 'ATOM') continue;
+    if (iModel >= 0) {
+      if (firstModel === null) firstModel = row[iModel];
+      else if (row[iModel] !== firstModel) continue; // only the first model (e.g. NMR ensembles)
+    }
+    if (iAlt >= 0) {
+      const alt = row[iAlt];
+      if (alt && alt !== '.' && alt !== '?' && alt !== 'A') continue;
+    }
+    const chainId = iAsym >= 0 ? row[iAsym] : (iAuthAsym >= 0 ? row[iAuthAsym] : '?');
+    const resName = (iComp >= 0 ? row[iComp] : '').toUpperCase();
+    const seqId   = (iSeqId >= 0 && row[iSeqId] !== '.') ? row[iSeqId] : (iAuthSeqId >= 0 ? row[iAuthSeqId] : '');
+    const ins     = iIns >= 0 ? row[iIns] : '';
+    const key = `${chainId}_${seqId}_${ins}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (chains[chainId] ||= []).push(resName);
+  }
+  return Object.entries(chains).map(([chainId, resnames]) => ({
+    chainId,
+    sequence: resnames.map(r => AA3TO1[r] || 'X').join(''),
+  })).filter(c => c.sequence.replace(/X/g, '').length > 0);
 }
 
 // ─── Import modal ─────────────────────────────────────────────────────────────

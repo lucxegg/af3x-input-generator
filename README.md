@@ -30,10 +30,12 @@ A browser-based JSON input generator for [AF3x](https://github.com/KosinskiLab/a
 - Works for protein PTMs (`ptmType`/`ptmPosition`) and RNA/DNA base modifications
 
 ### Advanced (collapsible)
+- Optional free-text **description** per chain (cosmetic only, not used by AF3x)
 - MSA configuration (unpaired/paired content or file paths)
-- Structural templates (mmCIF content or path + 0-based query/template indices)
+- Structural templates (mmCIF content or path + 0-based query/template indices), with
+  automatic index-mapping suggestions via sequence alignment against an uploaded PDB/mmCIF
 - Bonded atom pairs (covalent bonds for glycans, covalent ligands)
-- User-provided CCD (inline mmCIF content only — AF3x has no path option for this field)
+- User-provided CCD (inline mmCIF content or file path)
 
 ### Output
 - **Generate JSON** — validates all fields, produces AF3x-compatible JSON
@@ -61,7 +63,7 @@ After parsing, you can filter by minimum score, exclude decoys, restrict to inte
 ```json
 {
   "dialect": "alphafold3",
-  "version": 2,
+  "version": 4,
   "name": "my_complex",
   "modelSeeds": [1, 2, 3],
   "sequences": [

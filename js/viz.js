@@ -1,6 +1,6 @@
 // Arc diagram renderer — draws chains as bars and crosslinks as bezier arcs
 
-import { CHAIN_COLORS, XL_GROUP_COLORS } from './data.js';
+import { XL_GROUP_COLORS } from './data.js';
 
 const MARGIN_LEFT   = 76;
 const MARGIN_RIGHT  = 58;  // wide enough for "1234 aa" hint text
@@ -17,7 +17,7 @@ const NS = 'http://www.w3.org/2000/svg';
  * Re-draw the arc diagram from current app state.
  *
  * @param {SVGSVGElement} svg
- * @param {Array}  chains   [{ id, label, length, colorIdx }]
+ * @param {Array}  chains   [{ id, label, length, color }]
  * @param {Array}  xlGroups [{ name, color, pairs: [{ chain1, pos1, chain2, pos2 }] }]
  * @param {Array}  ssBonds  [{ chain1, pos1, chain2, pos2 }]
  */
@@ -55,7 +55,7 @@ export function drawArcDiagram(svg, chains, xlGroups, ssBonds = []) {
   // ── Chain bars ───────────────────────────────────────────────────────────
   chains.forEach((chain, rowIdx) => {
     const y     = MARGIN_TOP + rowIdx * ROW_STRIDE;
-    const color = CHAIN_COLORS[chain.colorIdx % CHAIN_COLORS.length];
+    const color = chain.color;
     const fillW = chainBarW[chain.id];
 
     _drawChainShape(svg, chain.type, MARGIN_LEFT, y, fillW, BAR_HEIGHT, color);

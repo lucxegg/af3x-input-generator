@@ -56,6 +56,58 @@
   <!-- ─── Main layout ─────────────────────────────────────────────────────── -->
   <div class="main-layout">
 
+    <!-- ─── Intro / overview banner ───────────────────────────────────────── -->
+    <div class="intro-banner" id="introBanner">
+      <div class="intro-banner-header">
+        <span class="intro-banner-title">What you can do here</span>
+        <button class="btn btn-ghost btn-sm" id="introCollapseBtn">Hide details ▾</button>
+      </div>
+      <p class="intro-banner-subtitle">
+        This tool builds AF3x JSON inputs for crosslink-aware AlphaFold 3 structure prediction.
+        Every section below gives you more than one way to enter your data — pick whichever is
+        fastest for you.
+      </p>
+      <div class="intro-banner-body" id="introBannerBody">
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--primary)">Sequences</span>
+          <p>Type or paste a sequence directly, upload a FASTA file, fetch it automatically by
+            <strong>UniProt ID</strong>, or import chains and ligands straight out of a PDB/mmCIF
+            structure file.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--info-blue)">Crosslinks</span>
+          <p>Type chain and residue numbers directly, click the pick icon to set positions by
+            clicking residues in the sequence, or import an existing <strong>xiNET</strong> or
+            <strong>xiVIEW</strong> CSV result.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--accent-gold)">Disulfide Bonds</span>
+          <p>Type cysteine pairs directly, or click the pick icon to set both residues by clicking
+            cysteines in the sequence.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--success)">Modifications</span>
+          <p>Search more than 50 post-translational modifications by name or CCD code, then click
+            a residue to set the position.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--accent-orange)">MSA</span>
+          <p>Runs automatically by default. You can disable it entirely for a chain, or supply
+            your own pre-computed <strong>.a3m</strong> files instead.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--danger)">Structural Templates</span>
+          <p>Add custom templates manually — the query/template residue mapping can even be
+            suggested automatically by uploading a PDB or mmCIF file.</p>
+        </div>
+        <div class="intro-row">
+          <span class="intro-tag" style="--tag-color:var(--text-3)">Output</span>
+          <p>Generate, copy, or download the finished JSON, or re-import an existing AF3x JSON
+            file to keep editing it.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- TOP: Job Settings + Sequences — full width -->
     <div class="top-section">
 
@@ -77,9 +129,9 @@
           <div class="field" style="width:72px">
             <label for="inputVersion">
               Version
-              <span class="label-hint" data-tip="AF3x input format version — fixed at 2">?</span>
+              <span class="label-hint" data-tip="AF3x input format version — fixed at 4 (current)">?</span>
             </label>
-            <input type="number" id="inputVersion" value="2" min="2" max="2" disabled>
+            <input type="number" id="inputVersion" value="4" min="4" max="4" disabled>
           </div>
         </div>
       </section>
@@ -104,6 +156,12 @@
             Pick XL Residues
           </button>
         </div>
+        <p class="card-hint">
+          Add a chain by typing/pasting a sequence, uploading a FASTA file, or fetching it by
+          <strong>UniProt ID</strong>. <strong>Import PDB / mmCIF</strong> reads chains (and
+          ligands) directly out of a structure file. Use <strong>Pick XL Residues</strong> to set
+          crosslink positions by clicking residues below instead of typing numbers.
+        </p>
         <div id="sequences-container"></div>
         <div class="add-entity-row">
           <button class="btn-add-entity protein" data-seqtype="protein">+ Protein</button>
@@ -127,6 +185,11 @@
         </div>
         <p class="card-hint">
           Model crosslinker molecules explicitly between residue pairs. Indices are 1-based.
+          Type chain + residue directly, click the pick icon on a row (or
+          <strong>Pick XL Residues</strong> above) to set positions by clicking residues in the
+          sequence, or <strong>Import xiNET/xiVIEW CSV</strong> to load pairs from an existing
+          XL-MS result — that import also offers to fetch sequences for the linked proteins by
+          <strong>UniProt ID</strong>.
         </p>
         <div id="crosslinks-container"></div>
         <div id="xl-stats" class="xl-stats" style="display:none"></div>
@@ -151,7 +214,8 @@
         </div>
         <p class="card-hint">
           Cysteine pairs for disulfide bonds. AF3x models these by mutating Cys→Ala and
-          adding an S–S covalent ligand between them.
+          adding an S–S covalent ligand between them. Type positions directly, or click the
+          pick icon on a row to set both residues by clicking cysteines in the sequence.
         </p>
         <div id="ss-bonds-container"></div>
       </section>
@@ -175,13 +239,16 @@
           User CCD <span class="optional-tag">optional · expert</span>
         </summary>
         <p class="card-hint">
-          Custom ligand definitions not in the standard CCD. AF3x only accepts this as inline
-          mmCIF content embedded in the JSON (the <code>userCCD</code> field) — there is no
-          file-path option.
+          Custom ligand definitions not in the standard CCD. Provide inline mmCIF content
+          (<code>userCCD</code>) <em>or</em> a file path (<code>userCCDPath</code>) — not both.
         </p>
-        <div class="field">
+        <div class="field" style="margin-bottom:10px">
           <label for="userCCD">Inline mmCIF content</label>
           <textarea id="userCCD" rows="4" placeholder="Paste mmCIF content here…"></textarea>
+        </div>
+        <div class="field">
+          <label for="userCCDPath">CCD file path (.cif / .cif.gz / .cif.xz / .cif.zst)</label>
+          <input type="text" id="userCCDPath" placeholder="/path/to/custom_ligand.cif">
         </div>
       </details>
 
@@ -380,7 +447,7 @@
           <li><strong>Asymmetric crosslinkers</strong> — residue 1 is the NHS-ester end (reacts with K/S/T/Y/N-term), residue 2 is the diazirine end (any AA). The order matters for how AF3x places the linker.</li>
           <li><strong>SASD vs Euclidean distance</strong> — the max-distance threshold in each crosslinker preset is a solvent-accessible surface distance (SASD). The Euclidean CB–CB distance is always shorter; a pair passing the Euclidean check may still fail SASD if the path goes around an interface.</li>
           <li><strong>Seeds</strong> — AF3x uses model seeds to generate diverse structural models. A single seed produces one model; using 5 seeds gives an ensemble for picking the best-ranked prediction.</li>
-          <li><strong>Version field</strong> — the AF3x input format version (typically 2). Change only if your AF3x version requires a different schema.</li>
+          <li><strong>Version field</strong> — the AF3x input format version, fixed at 4 (the current schema version).</li>
         </ul>
       </section>
 
