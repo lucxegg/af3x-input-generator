@@ -38,7 +38,7 @@ html[data-theme="light"] {
   --code-border:    #d0d7de;
 
   --accent-gold:    #946800;
-  --info-blue:      #1a73e8;
+  --info-blue:      #7c4dff;
   --accent-orange:  #c75000;
   --text-muted:     #6b7076;
 
@@ -77,7 +77,7 @@ html[data-theme="dark"] {
   --code-border:    #3c4043;
 
   --accent-gold:    #f0b400;
-  --info-blue:      #5fa8f5;
+  --info-blue:      #9d4edd;
   --accent-orange:  #ff8c42;
   --text-muted:     #9aa0a6;
 
@@ -274,7 +274,7 @@ body {
 .top-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 28px;
 }
 
 /* Bottom row: Crosslinks/constraints left, Topology/output right */
@@ -288,7 +288,7 @@ body {
 .constraints-col {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 28px;
 }
 
 @media (max-width: 900px) {
@@ -305,15 +305,28 @@ body {
 }
 
 /* ─── Cards ────────────────────────────────────────────────────────────────── */
+/* Top-level sections each get a colour-coded top accent (matching the intro
+   banner's tag colours) via --section-accent, set inline per <section> — a
+   quick visual "what kind of section is this" cue, on top of the extra
+   spacing between sections, so they read as distinct rather than one
+   continuous wall of identical grey boxes. */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
+  border-top: 4px solid var(--section-accent, var(--border));
   border-radius: var(--radius);
   padding: 20px;
   box-shadow: var(--shadow-sm);
 }
 
-.card-advanced { padding: 0; }
+/* Advanced/collapsed sections get a muted version of their section accent —
+   present so they're not totally flat, but deliberately less eye-catching
+   than the main feature cards above them. */
+.card-advanced {
+  padding: 0;
+  border-top-width: 3px;
+  border-top-color: color-mix(in srgb, var(--section-accent, var(--border)) 40%, var(--border));
+}
 .card-advanced summary {
   padding: 14px 20px;
   cursor: pointer;
@@ -321,6 +334,9 @@ body {
   user-select: none;
   color: var(--text-2);
 }
+/* Title text itself should read the same as every other section's title —
+   only the chevron icon below stays muted. */
+.card-advanced summary.card-title { color: var(--text); }
 .card-advanced summary::-webkit-details-marker { display: none; }
 .card-advanced summary::before {
   content: '▶';
@@ -964,8 +980,8 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 .xl-row-pick-btn { color: var(--text-3); }
 .xl-row-pick-btn.xl-row-pick-active {
-  color: #4285f4;
-  background: rgba(66,133,244,0.15);
+  color: var(--info-blue);
+  background: color-mix(in srgb, var(--info-blue) 15%, transparent);
   border-radius: var(--radius-sm);
 }
 
@@ -1953,14 +1969,14 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
 
 /* XL pick mode: prominent border on the whole sequences panel */
 #sequences-container.sequences-xl-pick-active {
-  outline: 2px solid #4285f4;
+  outline: 2px solid var(--info-blue);
   outline-offset: 4px;
   border-radius: 6px;
   animation: pick-pulse-border 1.5s ease-in-out infinite;
 }
 @keyframes pick-pulse-border {
-  0%, 100% { outline-color: #4285f4; }
-  50%       { outline-color: rgba(66,133,244,0.35); }
+  0%, 100% { outline-color: var(--info-blue); }
+  50%       { outline-color: color-mix(in srgb, var(--info-blue) 35%, transparent); }
 }
 
 /* XL pick mode: all residues zooom on hover for easy targeting */
@@ -2001,11 +2017,11 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   filter: brightness(1.2);
 }
 
-/* First-click pending selection: blue pulse */
+/* First-click pending selection: pulse in the XL accent colour */
 .xl-pick-pending {
-  background: #4285f4 !important;
+  background: var(--info-blue) !important;
   color: #fff !important;
-  outline: 2px solid #c8d8f8;
+  outline: 2px solid color-mix(in srgb, var(--info-blue) 35%, white);
   outline-offset: 1px;
   border-radius: 2px;
   animation: xl-pulse 0.9s ease-in-out infinite;
@@ -2015,29 +2031,29 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   50%       { opacity: 0.5; }
 }
 
-/* "Pick XL Residues" button */
+/* "Pick XL Residues" button — uses the Crosslinks accent colour (purple) */
 .btn-xl-pick {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1.5px solid var(--primary);
+  border: 1.5px solid var(--info-blue);
   color: #fff;
-  background: var(--primary);
+  background: var(--info-blue);
   font-weight: 700;
   letter-spacing: 0.2px;
   box-shadow: var(--shadow-sm);
   transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 .btn-xl-pick:hover {
-  background: var(--primary-dark);
+  background: color-mix(in srgb, var(--info-blue) 80%, black);
   color: #fff;
   box-shadow: var(--shadow);
 }
 #selectXlBtn.xl-pick-mode-on {
-  background: rgba(66, 133, 244, 0.2);
-  border-color: var(--primary);
-  color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.22);
+  background: color-mix(in srgb, var(--info-blue) 20%, transparent);
+  border-color: var(--info-blue);
+  color: var(--info-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info-blue) 22%, transparent);
 }
 
 /* ─── XL confirm popup ───────────────────────────────────────────────────── */
@@ -2117,7 +2133,7 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   left: 50%;
   transform: translate(-50%, -50%);
   background: var(--bg-card);
-  border: 1px solid #4285f4;
+  border: 1px solid var(--info-blue);
   border-radius: 10px;
   padding: 18px 22px;
   z-index: 6000;
@@ -2147,7 +2163,7 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   font-size: 13px;
   color: var(--text-2);
 }
-.xl-confirm-radio-row input[type="radio"] { accent-color: #4285f4; cursor: pointer; }
+.xl-confirm-radio-row input[type="radio"] { accent-color: var(--info-blue); cursor: pointer; }
 .xl-confirm-sel {
   margin-left: 24px;
   font-size: 13px;
@@ -2173,9 +2189,9 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  background: #1d2b4f;
-  color: #c8d8f8;
-  border: 1px solid #4285f4;
+  background: #261d3f;
+  color: #ddc9fb;
+  border: 1px solid var(--info-blue);
   border-radius: 8px;
   padding: 10px 18px;
   display: none;
@@ -2190,8 +2206,8 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
 #xl-pick-banner.visible { display: flex; }
 #xl-pick-cancel-btn {
   background: transparent;
-  border: 1px solid rgba(66,133,244,0.6);
-  color: #8ab4f8;
+  border: 1px solid color-mix(in srgb, var(--info-blue) 60%, transparent);
+  color: #c9a6fc;
   border-radius: 4px;
   padding: 3px 10px;
   cursor: pointer;
@@ -2199,7 +2215,7 @@ details[open] .batch-summary::before { transform: rotate(90deg); }
   font-family: var(--font);
   flex-shrink: 0;
 }
-#xl-pick-cancel-btn:hover { background: rgba(66,133,244,0.12); }
+#xl-pick-cancel-btn:hover { background: color-mix(in srgb, var(--info-blue) 12%, transparent); }
 
 /* ─── Chemical compatibility warning ─────────────────────────────────────── */
 .xl-chem-warn {

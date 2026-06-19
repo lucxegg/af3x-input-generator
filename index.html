@@ -59,7 +59,7 @@
     <!-- ─── Intro / overview banner ───────────────────────────────────────── -->
     <div class="intro-banner" id="introBanner">
       <div class="intro-banner-header">
-        <span class="intro-banner-title">What you can do here</span>
+        <span class="intro-banner-title">Feature Overview</span>
         <button class="btn btn-ghost btn-sm" id="introCollapseBtn">Hide details ▾</button>
       </div>
       <p class="intro-banner-subtitle">
@@ -113,7 +113,7 @@
     <div class="top-section">
 
       <!-- Job Settings -->
-      <section class="card">
+      <section class="card" style="--section-accent:var(--text-3)">
         <h2 class="card-title">Job Settings</h2>
         <div class="field-row" style="margin-top:12px">
           <div class="field field-grow">
@@ -138,7 +138,7 @@
       </section>
 
       <!-- Sequences -->
-      <section class="card" id="sequences-card">
+      <section class="card" id="sequences-card" style="--section-accent:var(--primary)">
         <div class="card-header-row">
           <h2 class="card-title">Sequences</h2>
           <span class="seq-count-badge" id="seqCountBadge">0</span>
@@ -205,7 +205,7 @@
       <div class="constraints-col">
 
       <!-- Crosslinks -->
-      <section class="card" id="crosslinks-card">
+      <section class="card" id="crosslinks-card" style="--section-accent:var(--info-blue)">
         <div class="card-header-row">
           <h2 class="card-title">Crosslinks <span class="optional-tag">optional</span></h2>
           <button class="btn btn-ghost btn-sm" id="crosslinkerPresetsBtn">Presets ▾</button>
@@ -221,7 +221,7 @@
         <div id="crosslinks-container"></div>
         <div id="xl-stats" class="xl-stats" style="display:none"></div>
         <div class="section-actions">
-          <button class="btn btn-outline" id="addCrosslinkGroupBtn">+ Add crosslinker</button>
+          <button class="btn btn-outline btn-sm" id="addCrosslinkGroupBtn">+ Add crosslinker</button>
           <button class="btn btn-ghost btn-sm" id="importCsvBtn"
                   title="Only xiNET or xiVIEW CSV exports are accepted — convert other formats (pLink, MeroX, XlinkX, …) beforehand">
             Import xiNET/xiVIEW CSV ↑
@@ -234,10 +234,9 @@
       </section>
 
       <!-- Disulfide Bonds -->
-      <section class="card">
+      <section class="card" style="--section-accent:var(--accent-gold)">
         <div class="card-header-row">
           <h2 class="card-title">Disulfide Bonds <span class="optional-tag">optional</span></h2>
-          <button class="btn btn-outline btn-sm" id="addSsBondBtn">+ Add S–S bond</button>
         </div>
         <p class="card-hint">
           Cysteine pairs for disulfide bonds. AF3x models these by mutating Cys→Ala and
@@ -246,10 +245,13 @@
           cysteines in the sequence.
         </p>
         <div id="ss-bonds-container"></div>
+        <div class="section-actions">
+          <button class="btn btn-outline btn-sm" id="addSsBondBtn">+ Add S–S bond</button>
+        </div>
       </section>
 
       <!-- Bonded Atom Pairs (advanced) -->
-      <details class="card card-advanced">
+      <details class="card card-advanced" style="--section-accent:var(--accent-orange)">
         <summary class="card-title">
           Bonded Atom Pairs <span class="optional-tag">optional · advanced</span>
         </summary>
