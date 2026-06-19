@@ -333,6 +333,19 @@ body {
 .card-advanced[open] summary::before { transform: rotate(90deg); }
 .card-advanced > *:not(summary) { padding: 0 20px 20px; }
 
+/* Advanced collapsible nested inside a .card (e.g. Custom CCD under Sequences) —
+   own subtle border/background instead of relying on an outer .card, so it
+   doesn't double up on the parent's padding. */
+.seq-level-advanced {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+.seq-level-advanced > summary { padding: 10px 14px; }
+.seq-level-advanced > *:not(summary) { padding: 0 14px 14px; }
+.seq-level-advanced[open] > summary { border-bottom: 1px solid var(--border); }
+
 .card-title {
   font-size: 15px;
   font-weight: 600;
@@ -474,6 +487,7 @@ body {
 /* ─── Form fields ──────────────────────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-row { display: flex; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+.field-label-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .field-grow { flex: 1; }
 .field-narrow { width: 100px; flex-shrink: 0; }
 
@@ -955,25 +969,32 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
   border-radius: var(--radius-sm);
 }
 
-/* PTM-highlighted residues — same chip style as XL highlights */
+/* Modification-highlighted residues (PTMs, base mods, disulfide picks) — gold
+   family + a dotted underline, deliberately distinct from the flat-fill
+   .xl-hl chip so a modification can never be mistaken for a crosslink anchor,
+   even by colour alone. */
 .mod-valid {
-  background: var(--mod-color, #34a853);
+  background: var(--mod-color, #c9920a);
   color: #fff;
   font-weight: 600;
   border-radius: 2px;
   padding: 0 1px;
   cursor: pointer;
   opacity: 0.72;
+  text-decoration: underline dotted rgba(255,255,255,0.85);
+  text-decoration-thickness: 2px;
 }
 .mod-valid:hover { opacity: 1; filter: brightness(1.15); }
 
 .mod-selected {
-  background: var(--mod-color, #34a853);
+  background: var(--mod-color, #c9920a);
   color: #fff;
   font-weight: 700;
   border-radius: 2px;
   padding: 0 1px;
   cursor: pointer;
+  text-decoration: underline solid rgba(255,255,255,0.9);
+  text-decoration-thickness: 2px;
 }
 .mod-selected:hover { filter: brightness(1.15); }
 
@@ -990,6 +1011,15 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 }
 .subsection .field-row { margin-bottom: 14px; }
 .subsection .field-row:last-child { margin-bottom: 0; }
+
+/* Modification row — tinted with the same colour as its highlight in the
+   sequence display above, so the row and the highlighted residue read as
+   the same thing at a glance. Declared after .subsection so it wins the
+   border-left colour / background it shares with that base class. */
+.mod-row.subsection {
+  border-left-color: var(--mod-row-color, var(--primary));
+  background: color-mix(in srgb, var(--mod-row-color, var(--primary)) 10%, var(--bg-subtle));
+}
 .tpl-entry-header {
   display: flex;
   align-items: center;

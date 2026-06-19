@@ -37,6 +37,14 @@ export const XL_GROUP_COLORS = [
   '#9334e6', '#007b83', '#c01880', '#e37400',
 ];
 
+// Highlight colours for modifications (PTMs / base mods) — a distinct gold/amber
+// family, kept well clear of XL_GROUP_COLORS so a modified residue can never be
+// mistaken for a crosslink anchor at a glance, while still distinguishing
+// different modification types from each other.
+export const MOD_GROUP_COLORS = [
+  '#c9920a', '#8a5a00', '#e0a72e', '#b07d1a',
+];
+
 // Stroke-dasharray values for crosslink groups — each group gets a distinct line style.
 // Order: solid → long-dash → short-dash → dash-dot → dotted → very-long → dash-2dot → medium
 export const XL_DASH_PATTERNS = [

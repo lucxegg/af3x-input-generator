@@ -171,6 +171,31 @@
           <button class="btn-add-entity dna"     data-seqtype="dna">+ DNA</button>
           <button class="btn-add-entity ligand"  data-seqtype="ligand">+ Ligand</button>
         </div>
+
+        <!-- User CCD (advanced) — global, but only shown once a Ligand chain exists -->
+        <details class="card-advanced seq-level-advanced" id="userCcdSection" style="display:none">
+          <summary class="card-title">
+            Custom CCD <span class="optional-tag">optional · expert · for Ligands</span>
+          </summary>
+          <p class="card-hint">
+            Custom ligand definitions not in the standard CCD — referenced by
+            <strong>CCD code</strong> from any Ligand chain above. Provide inline mmCIF content
+            (<code>userCCD</code>) <em>or</em> a file path (<code>userCCDPath</code>), not both.
+          </p>
+          <div class="field" style="margin-bottom:10px">
+            <div class="field-label-row">
+              <label for="userCCD">Inline mmCIF content</label>
+              <label class="btn btn-ghost btn-xs msa-upload-label" title="Upload a .cif/.mmcif/.pdb file — its raw text is embedded inline as userCCD">
+                Upload file <input type="file" id="userCCDFile" accept=".cif,.mmcif,.pdb,.ent,.txt" style="display:none">
+              </label>
+            </div>
+            <textarea id="userCCD" rows="4" placeholder="Paste mmCIF content here, or upload a .cif / .mmcif / .pdb file above…"></textarea>
+          </div>
+          <div class="field">
+            <label for="userCCDPath">CCD file path (.cif / .cif.gz / .cif.xz / .cif.zst)</label>
+            <input type="text" id="userCCDPath" placeholder="/path/to/custom_ligand.cif">
+          </div>
+        </details>
       </section>
 
     </div><!-- /top-section -->
@@ -234,25 +259,6 @@
         </p>
         <div id="bonds-container"></div>
         <button class="btn btn-outline btn-sm" id="addBondBtn" style="margin-top:8px">+ Add bond</button>
-      </details>
-
-      <!-- User CCD (advanced) -->
-      <details class="card card-advanced">
-        <summary class="card-title">
-          User CCD <span class="optional-tag">optional · expert</span>
-        </summary>
-        <p class="card-hint">
-          Custom ligand definitions not in the standard CCD. Provide inline mmCIF content
-          (<code>userCCD</code>) <em>or</em> a file path (<code>userCCDPath</code>) — not both.
-        </p>
-        <div class="field" style="margin-bottom:10px">
-          <label for="userCCD">Inline mmCIF content</label>
-          <textarea id="userCCD" rows="4" placeholder="Paste mmCIF content here…"></textarea>
-        </div>
-        <div class="field">
-          <label for="userCCDPath">CCD file path (.cif / .cif.gz / .cif.xz / .cif.zst)</label>
-          <input type="text" id="userCCDPath" placeholder="/path/to/custom_ligand.cif">
-        </div>
       </details>
 
       <!-- Generate -->
@@ -722,10 +728,10 @@
     </div>
   </div>
 
-  <!-- XL residue pick banner (fixed, shown when first residue is selected) -->
+  <!-- XL residue pick banner (fixed, shown for the whole time pick mode is active) -->
   <div id="xl-pick-banner" role="status" aria-live="polite">
     <span id="xl-pick-banner-text"></span>
-    <button id="xl-pick-cancel-btn">Cancel (Esc)</button>
+    <button id="xl-pick-cancel-btn">Stop picking (Esc)</button>
   </div>
 
   <!-- Global tooltip for .label-hint "?" icons — escapes overflow:hidden ancestors -->

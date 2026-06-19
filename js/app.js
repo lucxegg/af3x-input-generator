@@ -5,7 +5,7 @@
  * PTM picker, JSON generation, JSON import, and coordinates the arc diagram.
  */
 
-import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, chainColorForType, XL_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
+import { CROSSLINKERS, PTM_DATABASE, PTM_CATEGORIES, chainColorForType, XL_GROUP_COLORS, MOD_GROUP_COLORS, XL_DASH_PATTERNS } from './data.js';
 import { drawArcDiagram } from './viz.js';
 import { openImportModal, initImportModal, _shortProteinName } from './csv_import.js';
 import { openPdbModal, initPdbModal, extractAtomSequences, isMmcifText, pdbToMmcif } from './pdb_import.js';
@@ -249,6 +249,7 @@ export function addSequenceCard(type) {
   card.className  = 'seq-card';
   card.dataset.id = id;
   card.dataset.color = color;
+  card.dataset.type = type;
   card.style.setProperty('--chain-color', color);
 
   card.innerHTML = `
@@ -357,6 +358,10 @@ function _nextChainId() {
 function _updateSeqCount() {
   const n = document.querySelectorAll('.seq-card').length;
   document.getElementById('seqCountBadge').textContent = n;
+
+  const hasLigand = !!document.querySelector('.seq-card[data-type="ligand"]');
+  const ccdSection = document.getElementById('userCcdSection');
+  if (ccdSection) ccdSection.style.display = hasLigand ? '' : 'none';
 }
 
 function _sequenceInputBlock(type, id) {
@@ -477,14 +482,15 @@ function _advancedBlock(type, id) {
 
   if (type === 'ligand') return descSection;
 
+  const modLabel = type === 'protein' ? 'Post-translational Modification' : 'Base Modifications';
   const modSection = `
     <div class="adv-section">
       <div class="adv-section-header">
-        <span>Modifications
+        <span>${modLabel}
           <span class="label-hint" data-tip="Post-translational modifications (e.g. phosphorylation, methylation) or RNA/DNA base modifications applied at a specific residue position. Click ⋯ on a row to search by name or CCD code.">?</span>
         </span>
         <div class="adv-section-actions"></div>
-        <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add modification</button>
+        <button class="btn btn-outline btn-xs add-mod-btn" data-seqid="${id}">+ Add PTM</button>
       </div>
       <div class="mods-container" data-seqid="${id}"></div>
     </div>`;
@@ -1289,6 +1295,21 @@ function _toggleXlPickMode() {
   btn?.classList.toggle('xl-pick-mode-on', _xlPickMode);
   seqCont?.classList.toggle('sequences-xl-pick-active', _xlPickMode);
   if (!_xlPickMode) _clearPickState();
+  else _updatePickBanner();
+}
+
+// Banner stays visible for the whole time pick mode is on (not just while a
+// residue is pending) so it's always obvious the picker is still active and
+// normal clicks elsewhere in the page won't do what you expect.
+function _updatePickBanner() {
+  const banner = document.getElementById('xl-pick-banner');
+  const textEl = document.getElementById('xl-pick-banner-text');
+  if (!banner || !textEl) return;
+  if (!_xlPickMode) { banner.classList.remove('visible'); return; }
+  textEl.textContent = _xlPickState
+    ? `${_xlPickState.chainId}:${_xlPickState.pos} selected — click a second residue`
+    : 'XL pick mode active — click two residues to add a pair';
+  banner.classList.add('visible');
 }
 
 function _clearPickState() {
@@ -1296,8 +1317,7 @@ function _clearPickState() {
     try { _xlPickState.spanEl.classList.remove('xl-pick-pending'); } catch {}
   }
   _xlPickState = null;
-  const banner = document.getElementById('xl-pick-banner');
-  if (banner) banner.classList.remove('visible');
+  _updatePickBanner();
 }
 
 function _closePendingPair() {
@@ -1311,9 +1331,7 @@ function _handleResidueClick(chainId, pos, spanEl) {
     // First residue selected
     _xlPickState = { chainId, pos, spanEl };
     spanEl.classList.add('xl-pick-pending');
-    const textEl = document.getElementById('xl-pick-banner-text');
-    if (textEl) textEl.textContent = `${chainId}:${pos} selected — click a second residue`;
-    document.getElementById('xl-pick-banner')?.classList.add('visible');
+    _updatePickBanner();
   } else if (_xlPickState.chainId === chainId && _xlPickState.pos === pos) {
     _clearPickState(); // same residue: cancel
   } else {
@@ -2017,17 +2035,25 @@ function _applyPTM(ptm) {
   const modsEl = card?.querySelector(`.mods-container[data-seqid="${seqId}"]`);
   if (!modsEl) return;
 
+  let row, posEl;
   if (existingModEl?.classList.contains('mod-row')) {
     // Update existing row's CCD in place
-    const ccdEl  = existingModEl.querySelector('.mod-ccd');
-    const posEl  = existingModEl.querySelector('.mod-pos');
-    const warnEl = existingModEl.querySelector('.mod-pos-warn');
+    row    = existingModEl;
+    const ccdEl  = row.querySelector('.mod-ccd');
+    posEl  = row.querySelector('.mod-pos');
+    const warnEl = row.querySelector('.mod-pos-warn');
     if (ccdEl) ccdEl.value = ptm.ccd;
     _validateModRow(ptm.ccd, posEl?.value || '', seqId, warnEl);
     _updateRuler(card);
+    _refreshModRowColors(seqId);
   } else {
-    _addModRow(modsEl, seqId, ptm.ccd, null);
+    row   = _addModRow(modsEl, seqId, ptm.ccd, null);
+    posEl = row.querySelector('.mod-pos');
   }
+
+  // No position chosen yet — go straight into pick mode so valid residues
+  // for this modification's target amino acid are highlighted right away.
+  if (!posEl?.value) _toggleModResiduePickMode(seqId, row);
   document.getElementById('ptm-modal').style.display = 'none';
 }
 
@@ -2061,10 +2087,15 @@ function _addModRow(container, seqId, ccdCode = '', position = '') {
   const revalidate = () => {
     _validateModRow(ccdEl.value, posEl.value, seqId, warnEl);
     _updateRuler(document.querySelector(`.seq-card[data-id="${seqId}"]`));
+    _refreshModRowColors(seqId);
   };
 
   ccdEl.addEventListener('change', revalidate);
-  posEl.addEventListener('input',  () => _validateModRow(ccdEl.value, posEl.value, seqId, warnEl));
+  posEl.addEventListener('input',  () => {
+    // Typing a position by hand supersedes click-to-pick — drop out of pick mode.
+    if (_modPickState?.row === row) _exitModPickMode();
+    _validateModRow(ccdEl.value, posEl.value, seqId, warnEl);
+  });
   posEl.addEventListener('change', revalidate);
 
   row.querySelector('.btn-remove-pair').addEventListener('click', () => {
@@ -2072,6 +2103,7 @@ function _addModRow(container, seqId, ccdCode = '', position = '') {
     row.remove();
     _updateRuler(document.querySelector(`.seq-card[data-id="${seqId}"]`));
     _updateAdvancedSummary(seqId);
+    _refreshModRowColors(seqId);
   });
   row.querySelector('.mod-pick-btn').addEventListener('click', () => _openPTMPicker(seqId, row));
   row.querySelector('.mod-res-pick-btn').addEventListener('click', () => _toggleModResiduePickMode(seqId, row));
@@ -2079,6 +2111,8 @@ function _addModRow(container, seqId, ccdCode = '', position = '') {
   container.appendChild(row);
   if (ccdCode && position) _validateModRow(ccdCode, position, seqId, warnEl);
   _updateAdvancedSummary(seqId);
+  _refreshModRowColors(seqId);
+  return row;
 }
 
 function _validateModRow(ccdRaw, posRaw, seqId, warnEl) {
@@ -2110,11 +2144,23 @@ function _buildPTMColorMap(seqId) {
     ?.querySelectorAll('.mod-row .mod-ccd').forEach(el => {
       const ccd = el.value.trim().toUpperCase();
       if (ccd && !map.has(ccd)) {
-        map.set(ccd, XL_GROUP_COLORS[idx % XL_GROUP_COLORS.length]);
+        map.set(ccd, MOD_GROUP_COLORS[idx % MOD_GROUP_COLORS.length]);
         idx++;
       }
     });
   return map;
+}
+
+// Tints each modification row with the same colour used for its highlight in
+// the sequence display, so the row and the highlighted residue are visually
+// linked at a glance.
+function _refreshModRowColors(seqId) {
+  const colorMap = _buildPTMColorMap(seqId);
+  document.querySelectorAll(`.mods-container[data-seqid="${seqId}"] .mod-row`).forEach(row => {
+    const ccd   = (row.querySelector('.mod-ccd')?.value || '').trim().toUpperCase();
+    const color = ccd ? (colorMap.get(ccd) || MOD_GROUP_COLORS[0]) : null;
+    row.style.setProperty('--mod-row-color', color || 'var(--primary)');
+  });
 }
 
 function _buildModHighlights(seqId) {
@@ -2132,7 +2178,7 @@ function _buildModHighlights(seqId) {
     const pos   = parseInt(row.querySelector('.mod-pos')?.value) || 0;
     if (!ccd) return;
     const ptm   = PTM_DATABASE.find(p => p.ccd.toUpperCase() === ccd);
-    const color = colorMap.get(ccd) || '#34a853';
+    const color = colorMap.get(ccd) || MOD_GROUP_COLORS[0];
     const name  = ptm ? ptm.name : ccd;
 
     // In pick mode: highlight all valid positions for the active row
@@ -3653,6 +3699,19 @@ function _initUserCcdExclusivity() {
   if (!content || !path) return;
   content.addEventListener('input', _syncUserCcdExclusivity);
   path.addEventListener('input', _syncUserCcdExclusivity);
+
+  const fileInput = document.getElementById('userCCDFile');
+  fileInput?.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      content.value = e.target.result;
+      _syncUserCcdExclusivity();
+    };
+    reader.readAsText(file);
+    fileInput.value = '';
+  });
 }
 
 // ─── Global tooltips for .label-hint "?" icons ─────────────────────────────────
