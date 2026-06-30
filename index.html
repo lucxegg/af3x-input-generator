@@ -130,9 +130,9 @@
           <div class="field" style="width:72px">
             <label for="inputVersion">
               Version
-              <span class="label-hint" data-tip="AF3x input format version — fixed at 4 (current)">?</span>
+              <span class="label-hint" data-tip="AF3x input format version. Default is 4 (current). Use 3 for older AF3x installations that don't support v4 fields (e.g. description).">?</span>
             </label>
-            <input type="number" id="inputVersion" value="4" min="4" max="4" disabled>
+            <input type="number" id="inputVersion" value="4" min="1" max="4" step="1">
           </div>
         </div>
       </section>
@@ -498,7 +498,7 @@
           <li><strong>Asymmetric crosslinkers</strong> — residue 1 is the NHS-ester end (reacts with K/S/T/Y/N-term), residue 2 is the diazirine end (any AA). The order matters for how AF3x places the linker.</li>
           <li><strong>SASD vs Euclidean distance</strong> — the max-distance threshold in each crosslinker preset is a solvent-accessible surface distance (SASD). The Euclidean CB–CB distance is always shorter; a pair passing the Euclidean check may still fail SASD if the path goes around an interface.</li>
           <li><strong>Seeds</strong> — AF3x uses model seeds to generate diverse structural models. A single seed produces one model; using 5 seeds gives an ensemble for picking the best-ranked prediction.</li>
-          <li><strong>Version field</strong> — the AF3x input format version, fixed at 4 (the current schema version).</li>
+          <li><strong>Version field</strong> — the AF3x input format version, default 4 (current schema). Use 3 for older AF3x installations that don't support v4 fields.</li>
           <li><strong>Description field</strong> — a free-text comment per chain (under <em>Advanced options</em>). Purely cosmetic, not used by AF3x for prediction — leave blank unless you want a label in the JSON.</li>
           <li><strong>User CCD</strong> — for custom ligand definitions not in the standard CCD. Provide inline mmCIF content <em>or</em> a file path, not both.</li>
           <li><strong>Did the template actually get used?</strong> AF3x accepting a template (skipping its own search) doesn't guarantee the predicted structure closely matches it — templates are a soft signal, not a hard constraint. To check: (1) look for "Skipping MSA and template search… because it already has templates" in the AF3x log, and (2) for a stronger check, run the same job again with <em>Without templates</em> and compare pLDDT/confidence between the two runs, or structurally align the predicted model against the template mmCIF.</li>

@@ -270,7 +270,7 @@ export function addSequenceCard(type) {
             <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
             <path d="M3 11H2.5A1.5 1.5 0 0 1 1 9.5v-7A1.5 1.5 0 0 1 2.5 1h7A1.5 1.5 0 0 1 11 2.5V3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
           </svg>
-          Clone
+          Duplicate
         </button>
       </div>
 
@@ -2631,16 +2631,18 @@ function _validateGeneratedJSON(jsonObj) {
           return false;
         };
 
+        const _fmtAllowed = r => {
+          const aas = r.filter(x => x !== 'N-term').join(', ');
+          return r.includes('N-term') ? `${aas} (or N-term at pos 1)` : aas;
+        };
         if (!chemOk(seq1, p1, r1)) {
           const aa = seq1[p1 - 1];
-          const allowed = r1.filter(r => r !== 'N-term').join(', ');
-          const msg = `XL "${xlName}": ${c1}:${aa}${p1} — ${aa} not reactive at END1 position [${allowed}]`;
+          const msg = `XL "${xlName}": ${c1}:${aa}${p1} — ${aa} not reactive at END1 position [${_fmtAllowed(r1)}]`;
           errors.push(msg);
         }
         if (!chemOk(seq2, p2, r2)) {
           const aa = seq2[p2 - 1];
-          const allowed = r2.filter(r => r !== 'N-term').join(', ');
-          const msg = `XL "${xlName}": ${c2}:${aa}${p2} — ${aa} not reactive at END2 position [${allowed}]`;
+          const msg = `XL "${xlName}": ${c2}:${aa}${p2} — ${aa} not reactive at END2 position [${_fmtAllowed(r2)}]`;
           // Only error if the crosslinker actually requires a specific residue at END2
           const isAnyAA = !r2 || r2.includes('any AA');
           if (isAnyAA) warnings.push(msg); else errors.push(msg);
@@ -2700,7 +2702,7 @@ function _showValidationReport(errors, warnings, infos = []) {
 function _buildJSON() {
   const name    = document.getElementById('jobName').value.trim();
   const seedRaw = document.getElementById('modelSeeds').value.trim();
-  const version = 4;  // AF3x input format version is fixed at 4 (current: adds userCCDPath [v3] and description fields [v4])
+  const version = parseInt(document.getElementById('inputVersion')?.value || '4', 10) || 4;
 
   let seeds;
   if (/^\d+$/.test(seedRaw)) {
@@ -3434,16 +3436,20 @@ function _checkXlPositions() {
           return reactive.includes(aa) || (pos === 1 && reactive.includes('N-term'));
         };
 
+        const fmtR = r => {
+          const aas = r.filter(x => x !== 'N-term').join('/');
+          return r.includes('N-term') ? `${aas}/N-term@1` : aas;
+        };
         if (xl.symmetric) {
           const r = xl.reactiveResidues;
           const bad = [];
           if (!isOk(c1, p1, r)) {
             const aa = chainSeq[c1]?.[p1 - 1] || '?';
-            bad.push(`${c1}:${aa}${p1} not reactive [${r.filter(x => x !== 'N-term').join('/')}]`);
+            bad.push(`${c1}:${aa}${p1} not reactive [${fmtR(r)}]`);
           }
           if (!isOk(c2, p2, r)) {
             const aa = chainSeq[c2]?.[p2 - 1] || '?';
-            bad.push(`${c2}:${aa}${p2} not reactive [${r.filter(x => x !== 'N-term').join('/')}]`);
+            bad.push(`${c2}:${aa}${p2} not reactive [${fmtR(r)}]`);
           }
           chemMsg = bad.join(' · ');
         } else {
@@ -3461,7 +3467,7 @@ function _checkXlPositions() {
             // Neither order works
             const aa1 = chainSeq[c1]?.[p1 - 1] || '?';
             const aa2 = chainSeq[c2]?.[p2 - 1] || '?';
-            const allowed = end1.filter(x => x !== 'N-term').join('/');
+            const allowed = fmtR(end1);
             if (!isOk(c1, p1, end1) && !isOk(c2, p2, end1)) {
               chemMsg = `neither position has END1-reactive residue [${allowed}]`;
             } else {
